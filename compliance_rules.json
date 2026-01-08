@@ -1,0 +1,22 @@
+{
+    "allowed_words": [
+        "helps to",
+        "supports",
+        "looks better",
+        "feels softer",
+        "appears radiant",
+        "moisturizes",
+        "cleanses",
+        "refreshing"
+    ],
+    "forbidden_words": [
+        "cure",
+        "heal",
+        "treat",
+        "instant results",
+        "permanent",
+        "guaranteed",
+        "miracle",
+        "stops aging"
+    ]
+}

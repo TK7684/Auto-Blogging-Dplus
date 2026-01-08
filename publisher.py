@@ -1,0 +1,87 @@
+import requests
+import base64
+import os
+import json
+from datetime import datetime
+
+class WordPressPublisher:
+    def __init__(self, wp_url, wp_user, wp_password):
+        self.wp_url = wp_url.rstrip('/')
+        self.auth = (wp_user, wp_password)
+        self.api_url = f"{self.wp_url}/wp-json/wp/v2"
+
+    def upload_media(self, image_path, title=None):
+        """Uploads an image to WordPress."""
+        media_url = f"{self.api_url}/media"
+        
+        try:
+            with open(image_path, 'rb') as img:
+                headers = {
+                    'Content-Disposition': f'attachment; filename="{os.path.basename(image_path)}"',
+                    'Content-Type': 'image/jpeg' # Adjust based on file type if needed
+                }
+                
+                response = requests.post(
+                    media_url, 
+                    auth=self.auth, 
+                    headers=headers, 
+                    data=img
+                )
+                
+                if response.status_code == 201:
+                    data = response.json()
+                    print(f"Image uploaded successfully: {data['source_url']}")
+                    return data['id']
+                else:
+                    print(f"Failed to upload image: {response.text}")
+                    return None
+        except Exception as e:
+            print(f"Error uploading media: {e}")
+            return None
+
+    def create_post(self, title, content, status='draft', category_ids=None, tag_ids=None, featured_media_id=None):
+        """Creates a new WordPress post."""
+        post_url = f"{self.api_url}/posts"
+        
+        data = {
+            'title': title,
+            'content': content,
+            'status': status,
+            'date': datetime.now().isoformat()
+        }
+        
+        if category_ids:
+            data['categories'] = category_ids
+        if tag_ids:
+            data['tags'] = tag_ids
+        if featured_media_id:
+            data['featured_media'] = featured_media_id
+
+        try:
+            response = requests.post(post_url, auth=self.auth, json=data)
+            
+            if response.status_code == 201:
+                post_data = response.json()
+                print(f"Post created successfully: {post_data['link']}")
+                return post_data['id']
+            else:
+                print(f"Failed to create post: {response.text}")
+                return None
+        except Exception as e:
+            print(f"Error creating post: {e}")
+            return None
+
+if __name__ == "__main__":
+    # Test block
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    wp_url = os.getenv("WP_URL")
+    wp_user = os.getenv("WP_USER")
+    wp_pwd = os.getenv("WP_APP_PASSWORD")
+    
+    if wp_url and wp_user and wp_pwd:
+        publisher = WordPressPublisher(wp_url, wp_user, wp_pwd)
+        # publisher.create_post("Test Post", "This is a test content.", status="draft")
+    else:
+        print("WP credentials not set in .env")
