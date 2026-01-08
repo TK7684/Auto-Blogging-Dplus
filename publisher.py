@@ -71,6 +71,32 @@ class WordPressPublisher:
             print(f"Error creating post: {e}")
             return None
 
+    def get_posts(self, per_page=10):
+        url = f"{self.api_url}/wp-json/wp/v2/posts?per_page={per_page}"
+        try:
+            response = requests.get(url, auth=self.auth)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"Error fetching posts: {response.status_code}")
+                return []
+        except Exception as e:
+            print(f"Fetcher Exception: {e}")
+            return []
+
+    def update_post(self, post_id, data):
+        url = f"{self.api_url}/wp-json/wp/v2/posts/{post_id}"
+        try:
+            response = requests.post(url, json=data, auth=self.auth)
+            if response.status_code == 200:
+                return True
+            else:
+                print(f"Error updating post {post_id}: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Update Exception: {e}")
+            return False
+
 if __name__ == "__main__":
     # Test block
     from dotenv import load_dotenv

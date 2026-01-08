@@ -1,4 +1,4 @@
-# Setup Guide for Auto-Blogging
+- [x] v2.0: Multi-Agent Scientific Research & Maintenance enabled.
 
 ## 1. Installation
 
@@ -32,6 +32,13 @@
     ```powershell
     python main.py --mode daily
     ```
+
+## 4. Multi-Agent Workflow (v2.0)
+The system now uses 4 specialized agents:
+- **Researcher Agent**: Gathers scientific citations (PubMed/Science journals) for your ingredients.
+- **Generator Agent**: Writes the "Soft Sell" article using research data.
+- **Reviewer Agent**: Audits every post for Thai FDA compliance and tone before publishing.
+- **Maintenance Agent**: Automatically reviews and updates old posts daily to fix errors or add new scientific findings.
 
 ## 4. Automation (Windows Task Scheduler)
 To run the script every day at 10:00 AM:

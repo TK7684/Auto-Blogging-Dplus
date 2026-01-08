@@ -41,12 +41,13 @@ def process_compliance():
     print("Sending request to Gemini...")
     
     candidates = [
+        os.getenv("GEMINI_MODEL_NAME"), # Try env var first
+        'gemini-2.5-flash',
         'gemini-1.5-flash',
         'models/gemini-1.5-flash',
         'gemini-1.5-pro',
         'models/gemini-1.5-pro', 
         'gemini-pro',
-        'models/gemini-2.0-flash-exp'
     ]
     
     response = None
