@@ -39,8 +39,8 @@ class WordPressPublisher:
             print(f"Error uploading media: {e}")
             return None
 
-    def create_post(self, title, content, status='draft', category_ids=None, tag_ids=None, featured_media_id=None):
-        """Creates a new WordPress post."""
+    def create_post(self, title, content, status='draft', category_ids=None, tag_ids=None, featured_media_id=None, slug=None, seo_data=None):
+        """Creates a new WordPress post with SEO data."""
         post_url = f"{self.api_url}/posts"
         
         data = {
@@ -50,12 +50,22 @@ class WordPressPublisher:
             'date': datetime.now().isoformat()
         }
         
+        if slug:
+            data['slug'] = slug
+            
         if category_ids:
             data['categories'] = category_ids
         if tag_ids:
             data['tags'] = tag_ids
         if featured_media_id:
             data['featured_media'] = featured_media_id
+
+        # Yoast SEO & Meta Data
+        if seo_data:
+            data['meta'] = {
+                '_yoast_wpseo_focuskw': seo_data.get('seo_keyphrase', ''),
+                '_yoast_wpseo_metadesc': seo_data.get('seo_meta_description', '')
+            }
 
         try:
             response = requests.post(post_url, auth=self.auth, json=data)
@@ -71,8 +81,8 @@ class WordPressPublisher:
             print(f"Error creating post: {e}")
             return None
 
-    def get_posts(self, per_page=10):
-        url = f"{self.api_url}/wp-json/wp/v2/posts?per_page={per_page}"
+    def get_posts(self, per_page=10, page=1):
+        url = f"{self.api_url}/posts?per_page={per_page}&page={page}"
         try:
             response = requests.get(url, auth=self.auth)
             if response.status_code == 200:
@@ -85,7 +95,7 @@ class WordPressPublisher:
             return []
 
     def update_post(self, post_id, data):
-        url = f"{self.api_url}/wp-json/wp/v2/posts/{post_id}"
+        url = f"{self.api_url}/posts/{post_id}"
         try:
             response = requests.post(url, json=data, auth=self.auth)
             if response.status_code == 200:

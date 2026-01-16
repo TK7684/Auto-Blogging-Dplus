@@ -20,6 +20,10 @@ class TestAutoBlogging(unittest.TestCase):
         self.test_file = os.path.join(self.test_dir, "Test Product.txt")
         with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test Product\nFeatures: Good for skin.\nIngredients: Collagen.")
+        
+        # Set essential environment variables for tests
+        os.environ["GOOGLE_CLOUD_PROJECT"] = "claudecode-480704"
+        os.environ["VERTEX_MODEL_NAME"] = "gemini-2.0-flash-exp"
 
     def tearDown(self):
         if os.path.exists(self.test_file):
@@ -37,8 +41,9 @@ class TestAutoBlogging(unittest.TestCase):
         name = loader.extract_product_name(content)
         self.assertEqual(name, "Test Product")
 
-    @patch('google.generativeai.GenerativeModel')
-    def test_generator_mock(self, mock_model_class):
+    @patch('generator.call_vertex_with_retry')
+    @patch('generator.create_vertex_model')
+    def test_generator_mock(self, mock_create_model, mock_call_vertex):
         # Mock the API response
         mock_response = MagicMock()
         mock_response.text = json.dumps({
@@ -47,12 +52,10 @@ class TestAutoBlogging(unittest.TestCase):
             "excerpt": "Mock Excerpt"
         })
         
-        mock_model_instance = mock_model_class.return_value
-        mock_model_instance.generate_content.return_value = mock_response
+        # Bottom-most decorator (@patch('generator.create_vertex_model')) -> mock_create_model
+        # Top-most decorator (@patch('generator.call_vertex_with_retry')) -> mock_call_vertex
+        mock_call_vertex.return_value = mock_response
 
-        # Set API key env var for init
-        os.environ["GEMINI_API_KEY"] = "TEST_KEY"
-        
         gen = ContentGenerator()
         article = gen.generate_article("Test Product", "Info")
         

@@ -1,61 +1,191 @@
-import google.generativeai as genai
 import os
 import json
-import random
 from dotenv import load_dotenv
+from vertex_utils import create_vertex_model, get_model_name_from_env, call_vertex_with_retry
 
 class ContentGenerator:
     def __init__(self):
         load_dotenv()
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY not found.")
-        
-        genai.configure(api_key=api_key)
-        # Use model from env or default to flexible one
-        model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
-        print(f"Generator using model: {model_name}")
-        self.model = genai.GenerativeModel(model_name) 
-        
-        self.compliance_rules = self._load_compliance_rules()
+        self.model_name = get_model_name_from_env("gemini-2.0-flash-exp")
 
-    def _load_compliance_rules(self):
-        try:
+        # Validate Vertex AI configuration
+        project = os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            raise ValueError("GOOGLE_CLOUD_PROJECT not found in .env. "
+                           "Please set your Google Cloud Project ID.")
+
+        self.model = create_vertex_model(self.model_name)
+        
+        # Load brand guidelines
+        self.brand_guidelines = {}
+        if os.path.exists("brand_guidelines.json"):
+            with open("brand_guidelines.json", "r", encoding="utf-8") as f:
+                self.brand_guidelines = json.load(f)
+        
+        # Load compliance rules
+        self.compliance_rules = {}
+        if os.path.exists("compliance_rules.json"):
             with open("compliance_rules.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            print("Warning: compliance_rules.json not found. Compliance checks will be skipped.")
-            return {"allowed_words": [], "forbidden_words": []}
-
-    def generate_article(self, product_name, product_info, product_topic=None):
-        """Generates a soft-sell article for the product."""
+                self.compliance_rules = json.load(f)
         
-        allowed_claims = ", ".join(self.compliance_rules.get("allowed_words", [])[:50]) # Limit to first 50 hints
-    def generate_article(self, product_name, product_description, research_data=None):
+    def update_model(self, model_name):
+        """Updates the underlying Vertex AI model."""
+        self.model_name = model_name
+        self.model = create_vertex_model(model_name)
+        print(f"Generator: Model updated to {model_name}")
+
+    def generate_article(self, product_name, product_description, research_data=None, hot_topic_keywords=None):
         """
-        Generates a blog post using the soft-sell strategy.
+        Generates a blog post using the advanced SEO journalist strategy.
+
+        Args:
+            product_name: Name of the product
+            product_description: Description of the product
+            research_data: Research data from researcher agent
+            hot_topic_keywords: Keywords from hot topic to focus on (optional)
         """
+        brand_context = f"""
+        Brand Identity: {self.brand_guidelines.get('brand_name')}
+        Tagline: {self.brand_guidelines.get('tagline')}
+        Messaging Style: {self.brand_guidelines.get('tone_of_voice')}
+        Must Say: {json.dumps(self.brand_guidelines.get('brand_must_say', []), ensure_ascii=False)}
+        Do Not Say: {json.dumps(self.brand_guidelines.get('brand_do_not_say', []), ensure_ascii=False)}
+        CTA Recommendation: {self.brand_guidelines.get('social_links', {}).get('shopee')}
+        """
+
+        # Build research context with focus on hot topic
         research_context = ""
+        focus_ingredients = []
         if research_data:
-            research_context = f"""
-            Scientific Context:
-            {json.dumps(research_data.get('scientific_references', []), ensure_ascii=False)}
-            Key Takeaways: {research_data.get('key_takeaways', '')}
-            """
+            scientific_refs = research_data.get('scientific_references', [])
+            key_takeaways = research_data.get('key_takeaways', '')
+
+            # If hot topic keywords provided, filter content to focus on those
+            if hot_topic_keywords:
+                research_context = f"""
+                Hot Topic Focus: {', '.join(hot_topic_keywords)}
+                Scientific Context (focus on topics related to hot keywords):
+                {json.dumps([ref for ref in scientific_refs if any(kw.lower() in str(ref).lower() for kw in hot_topic_keywords)], ensure_ascii=False)}
+                Key Takeaways: {key_takeaways}
+                """
+                focus_ingredients = hot_topic_keywords
+            else:
+                research_context = f"""
+                Scientific Context:
+                {json.dumps(scientific_refs, ensure_ascii=False)}
+                Key Takeaways: {key_takeaways}
+                """
 
         prompt = f"""
-        CTA to include at the end is EXACTLY:
-        "สนใจสั่งซื้อสินค้าได้ที่ Shopee: https://s.shopee.co.th/BNONxdisb"
+        You are an expert SEO content writer and senior investigative journalist specializing in skincare education.
+        Write a comprehensive EDUCATIONAL article about: {product_name}.
+
+        Brand Context: {brand_context}
+        Product Info: {product_description}
+        {research_context}
+
+        CRITICAL CONTENT GUIDELINES - READ CAREFULLY:
+
+        1. **STRICT SOFT SELL APPROACH (95% Education, 5% Context)**
+           - This is an EDUCATIONAL article. Do NOT write it as a product review or sales pitch.
+           - Focus entirely on the *problem* (e.g., acne, aging) and the *solution* (e.g., ingredients, habits).
+           - **FORBIDDEN WORDS**: "buy", "order", "price", "promotion", "sale", "limited", "shop now", "deal".
+           - Mention the product ONLY ONCE or TWICE in the entire body, and only as a "helpful example" of a product containing the ingredients discussed.
+           - If the Hot Topic is about "Glass Skin", write about "How to get Glass Skin naturally", not "Buy this cream for Glass Skin".
+
+        2. **TREND & INGREDIENT FOCUS**
+           {'- CONNECT TO TREND: Explain why ' + ', '.join(hot_topic_keywords) + ' is trending right now.' if hot_topic_keywords else '- Focus on current skincare standards.'}
+           - Explain the SCIENCE: How do the ingredients actually work at a cellular level?
+           - Include 3+ lifestyle tips (diet for skin, sleep hygiene, stress) that have NOTHING to do with the product.
+
+        3. **NO PLACEHOLDERS - REAL CONTENT ONLY**
+           - DO NOT use [IMAGE_PLACEHOLDER_X] - instead, use relevant emoji icons or descriptive section breaks.
+           - DO NOT use [INSERT_INTERNAL_LINK:topic] - instead, write natural contextual mentions.
+           - If suggesting related topics, write them as normal text: "คุณอาจสนใจบทความเกี่ยวกับ [หัวข้อ] ได้"
+
+        4. **Structure & Formatting**
+           - H1: Main title (Must be catchy/educational, e.g., "5 Secrets to Glass Skin...", NOT "Product Name Review")
+           - H2: Section headers (educational topics)
+           - H3: Subsections if needed
+           - Short paragraphs (2-3 sentences max for mobile)
+           - Use bullet points for easy reading
+           - Include 2-3 relevant emoji throughout to break up text
+
+        5. **Thai Language & Tone**
+           - Professional but friendly (Friend to Friend).
+           - Use natural Thai expressions.
+           - Avoid robotic or translated-sounding phrases.
+
+        6. **CTA Placement**
+           - **ZERO** CTAs in the body.
+           - ONE subtle, polite sentence at the very end:
+           - "สำหรับผู้ที่สนใจผลิตภัณฑ์ที่มีส่วนผสมของ [Ingredient], สามารถดูข้อมูลเพิ่มเติมของ {self.brand_guidelines.get('brand_name')} ได้ที่เว็บไซต์หลักของเรา"
+           - DO NOT link to Shopee/Lazada in the text.
+
+        7. **FAQ Section**
+           - 5-7 frequently asked questions
+           - Questions should be 100% EDUCATIONAL (e.g., "Vitamin C helps with what?", "Can I use Niacinamide in the morning?").
+           - NO questions specific to the product (e.g., "How much is this cream?").
+
+        Output Format: Raw JSON matching this structure:
+        {{
+            "title": "Thai Educational Title (catchy, trend-focused)",
+            "content_html": "Full HTML with H tags, short paragraphs, NO placeholders, FAQ section at end",
+            "excerpt": "Educational summary (2-3 sentences)",
+            "seo_keyphrase": "Main Thai keyword phrase (related to topic/ingredient, not product name)",
+            "seo_meta_description": "Educational meta description (150-160 chars)",
+            "slug": "english-url-slug-topic-focused",
+            "suggested_categories": ["Skincare Education", "Health Tips", "Trends"],
+            "faq_schema_html": "<script type='application/ld+json'>FAQ schema markup</script>"
+        }}
+
+        Remember: Your goal is to be a TRUSTED INFORMANT. If you sell too hard, the user leaves. Educate them so well they trust your advice naturally.
         """
+        return self._call_gemini(prompt)
 
+    def rewrite_competitor_content(self, competitor_data, target_niche):
+        """
+        Rewrites competitor content with added scientific depth and investigative journalist tone.
+        """
+        prompt = f"""
+        You are an Investigative Journalist and SEO Expert.
+        
+        Competitor Article Summary:
+        {json.dumps(competitor_data, ensure_ascii=False)}
+        
+        Brand Identity: {self.brand_guidelines.get('brand_name')}
+        Brand tone: {self.brand_guidelines.get('tone_of_voice')}
+        CTA: {self.brand_guidelines.get('social_links', {}).get('shopee')}
+        
+        Task:
+        1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC.
+        2. Tone: Investigative and authoritative.
+        3. **STRICT THAI LANGUAGE**.
+        4. **Length: 1200+ words**.
+        5. Integrate scientific findings that are hidden or missed by the competitor.
+        6. Include [IMAGE_PLACEHOLDER_X] and [INSERT_INTERNAL_LINK:topic].
+        7. Include FAQ section with Schema.org markup.
+        
+        Output Format: Raw JSON (same keys as generate_article).
+        Do not use markdown formatting.
+        """
+        return self._call_gemini(prompt)
+
+    def _call_gemini(self, prompt):
+        """Call Vertex AI with the prompt."""
         try:
-            response = self.model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-            return json.loads(response.text)
+            print("Generator: Calling Vertex AI...")
+            response = call_vertex_with_retry(self.model, prompt)
+            if not response:
+                print("Generator: API returned no response.")
+                return None
+            print("Generator: API Call successful.")
+            content = response.text.replace("```json", "").replace("```", "").strip()
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as je:
+                print(f"Generator Error: Failed to parse JSON. Content: {content[:200]}...")
+                return None
         except Exception as e:
-            print(f"Error generating content: {e}")
+            print(f"Generator Error: {e}")
             return None
-
-if __name__ == "__main__":
-    gen = ContentGenerator()
-    # Mock data for testing
-    print(gen.generate_article("Test Product", "Good for skin, contains collagen."))

@@ -40,17 +40,31 @@ The system now uses 4 specialized agents:
 - **Reviewer Agent**: Audits every post for Thai FDA compliance and tone before publishing.
 - **Maintenance Agent**: Automatically reviews and updates old posts daily to fix errors or add new scientific findings.
 
-## 4. Automation (Windows Task Scheduler)
-To run the script every day at 10:00 AM:
+## 4. Automation (GitHub Actions "The Bot")
+The "Bot" is actually a **GitHub Action** workflow that runs on GitHub's servers automatically. It is defined in `.github/workflows/auto_blog.yml`.
 
-1.  Open **Task Scheduler** (Search in Start Menu).
-2.  Click **Create Basic Task**.
-3.  **Name**: `AutoBlogging_Daily`.
-4.  **Trigger**: Daily -> Start: 10:00:00 AM -> Recur every 1 days.
-5.  **Action**: Start a program.
-6.  **Program/script**: `python` (or full path to python.exe e.g., `C:\Python39\python.exe`).
-7.  **Add arguments**: `main.py --mode daily`
-8.  **Start in**: `C:\Users\ttapk\PycharmProjects\pythonProject\Auto-Blogging-DPLUS` (The project folder is CRITICAL).
-9.  Click **Finish**.
+### How to Activate the Bot:
+You do NOT need to run anything on your computer. You just need to set up the **Secrets** on GitHub so the bot can access your WordPress and Google Cloud.
 
-> **Note**: Ensure your computer is ON at 10 AM.
+1.  Go to your GitHub Repository page.
+2.  Click **Settings** tab.
+3.  On the left menu, click **Secrets and variables** -> **Actions**.
+4.  Click **New repository secret** (green button).
+5.  Add these EXACT secret names and values:
+
+| Secret Name | Value |
+| :--- | :--- |
+| `WP_URL` | Your WordPress URL (e.g., `https://dplusskin.co.th`) |
+| `WP_USER` | Your WordPress Username |
+| `WP_APP_PASSWORD` | Your WordPress Application Password (NOT your login password) |
+| `GOOGLE_CLOUD_PROJECT` | `auto-blogging-dplus` |
+| `GCP_SERVICE_ACCOUNT_KEY` | Paste the ENTIRE content of your JSON key file here |
+
+### Schedule
+- **Daily Post**: Runs every day at **10:00 AM Thailand Time** (03:00 UTC).
+- **Maintenance**: Runs every Sunday at **10:00 AM Thailand Time**.
+
+### How to Check if it's Running
+1.  Go to the **Actions** tab in your GitHub repository.
+2.  You will see "Auto-Blogging Daily" listed on the left.
+3.  Green checkmark = Success. Red X = Error (click to see logs).
