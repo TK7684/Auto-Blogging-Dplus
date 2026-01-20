@@ -1,0 +1,29 @@
+{
+    "brand_name": "DPLUS SKIN",
+    "website": "https://dplusskin.co.th/",
+    "tagline": "Innovative skincare for healthy skin",
+    "tone_of_voice": "Investigative journalist, authoritative yet accessible, scientific-backed, honest",
+    "target_audience": "Thai consumers interested in high-quality skincare and supplements",
+    "key_selling_points": [
+        "Scientific validation for all ingredients",
+        "Thai FDA compliance",
+        "Focus on skin microbiome and exosome technology",
+        "Soft-sell approach (80% education, 20% promotion)"
+    ],
+    "brand_do_not_say": [
+        "Miracle cure",
+        "Instant results",
+        "Better than plastic surgery",
+        "Guaranteed success"
+    ],
+    "brand_must_say": [
+        "Results depend on individual skin types",
+        "Consistent use is key",
+        "Consult with a specialist for severe skin issues"
+    ],
+    "social_links": {
+        "shopee": "https://s.shopee.co.th/BNONxdisb",
+        "facebook": "https://www.facebook.com/dplusskin",
+        "line": "@dplusskin"
+    }
+}
