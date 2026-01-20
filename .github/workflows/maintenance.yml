@@ -1,0 +1,112 @@
+name: Post Optimization & Maintenance
+
+on:
+  schedule:
+    # Runs every Sunday at 03:00 UTC (10:00 AM Thailand Time)
+    - cron: '0 3 * * 0'
+  workflow_dispatch: # Allows manual trigger with inputs
+    inputs:
+      mode:
+        description: 'Maintenance mode'
+        required: true
+        default: 'fix'
+        type: choice
+        options:
+          - fix
+          - seo
+          - both
+      limit:
+        description: 'Number of posts to process'
+        required: false
+        default: '10'
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v0
+      with:
+        credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+    - name: Set up gcloud
+      uses: google-github-actions/setup-gcloud@v0
+
+    - name: Run Maintenance - Fix Issues
+      if: github.event.inputs.mode != 'seo' || github.event.inputs.mode == ''
+      env:
+        GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+        GOOGLE_CLOUD_LOCATION: us-central1
+        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
+        WP_URL: ${{ secrets.WP_URL }}
+        WP_USER: ${{ secrets.WP_USER }}
+        WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      run: |
+        echo "Running post optimization (fix mode)..."
+        python -c "
+        from maintenance_agent import MaintenanceAgent
+        import sys
+        try:
+            maint = MaintenanceAgent()
+            limit = ${{ github.event.inputs.limit || 10 }}
+            maint.optimize_old_posts(dry_run=False, limit=limit)
+            sys.exit(0)
+        except Exception as e:
+            print(f'Error: {e}')
+            sys.exit(1)
+        "
+
+    - name: Run Maintenance - SEO Optimization
+      if: github.event.inputs.mode == 'seo' || github.event.inputs.mode == 'both'
+      env:
+        GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+        GOOGLE_CLOUD_LOCATION: us-central1
+        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
+        WP_URL: ${{ secrets.WP_URL }}
+        WP_USER: ${{ secrets.WP_USER }}
+        WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      run: |
+        echo "Running SEO optimization..."
+        python -c "
+        from maintenance_agent import MaintenanceAgent
+        import sys
+        try:
+            maint = MaintenanceAgent()
+            limit = ${{ github.event.inputs.limit || 5 }}
+            maint.seo_optimize_posts(dry_run=False, limit=limit)
+            sys.exit(0)
+        except Exception as e:
+            print(f'Error: {e}')
+            sys.exit(1)
+        "
+
+    - name: Commit Usage Tracking
+      run: |
+        git config --global user.name 'GitHub Action'
+        git config --global user.email 'action@github.com'
+        git add vertex_usage.json
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update usage tracking [skip ci]" && git push)
+
+    - name: Create Maintenance Report
+      if: always()
+      run: |
+        echo "## Maintenance Report - $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+        echo "**Mode:** ${{ github.event.inputs.mode || 'fix (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Limit:** ${{ github.event.inputs.limit || '10 (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
