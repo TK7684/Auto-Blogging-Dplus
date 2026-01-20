@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import json
@@ -7,6 +8,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from publisher import WordPressPublisher
 from vertex_utils import create_vertex_model, get_model_name_from_env, call_vertex_with_retry, get_rate_limiter
+from image_generator import ImageGenerator
+from yoast_integrator import YoastSEOIntegrator
 
 # Fix Windows console encoding for Thai characters
 if sys.platform == "win32":
@@ -35,6 +38,8 @@ class MaintenanceAgent:
 
         self.publisher = WordPressPublisher(wp_url, wp_user, wp_pwd)
         self.model = create_vertex_model(self.model_name)
+        self.image_gen = ImageGenerator()
+        self.yoast = YoastSEOIntegrator(wp_url, wp_user, wp_pwd)
 
         # Load compliance rules
         self.compliance_rules = {}
@@ -42,11 +47,27 @@ class MaintenanceAgent:
             with open("compliance_rules.json", "r", encoding="utf-8") as f:
                 self.compliance_rules = json.load(f)
 
+    def _cleanup_ai_leftovers(self, content):
+        """Removes common AI tags like [image: ...], [link: ...], etc. using regex."""
+        patterns = [
+            r'\[image:.*?\]',
+            r'\[link:.*?\]',
+            r'\[internal link:.*?\]',
+            r'\[IMAGE_PLACEHOLDER.*?\]',
+            r'\[INSERT_INTERNAL_LINK.*?\]',
+            r'\[\(.*?ภาพ.*?\).*?\]', # Catch Thai placeholders like [(ภาพ...)]
+        ]
+        cleaned_content = content
+        for pattern in patterns:
+            cleaned_content = re.sub(pattern, '', cleaned_content, flags=re.IGNORECASE)
+        return cleaned_content.strip()
+
     def _analyze_post_issues(self, post):
         """Analyze a post for common issues that need fixing."""
         content = post.get('content', {}).get('rendered', '')
         title = post.get('title', {}).get('rendered', '')
         post_id = post.get('id')
+        featured_media = post.get('featured_media', 0)
 
         issues = {
             'post_id': post_id,
@@ -55,23 +76,19 @@ class MaintenanceAgent:
             'placeholder_details': [],
             'hard_sell_indicators': [],
             'ingredient_overload': False,
+            'missing_image': featured_media == 0,
+            'needs_cleanup': False,
             'needs_optimization': False,
-            'priority': 'low'  # low, medium, high
+            'priority': 'low'
         }
 
-        # Check for placeholders
-        placeholder_patterns = [
-            '[IMAGE_PLACEHOLDER',
-            '[INSERT_INTERNAL_LINK',
-            '[INTERNAL_LINK',
-            '[LINK:',
-        ]
-
-        for pattern in placeholder_patterns:
-            if pattern in content:
+        # Check for placeholders using regex patterns
+        ai_leftover_patterns = [r'\[image:.*?\]', r'\[link:.*?\]', r'\[IMAGE_PLACEHOLDER']
+        for pattern in ai_leftover_patterns:
+            if re.search(pattern, content, re.IGNORECASE):
                 issues['has_placeholders'] = True
-                count = content.count(pattern)
-                issues['placeholder_details'].append(f"{pattern}: {count} times")
+                issues['needs_cleanup'] = True
+                issues['priority'] = 'medium'
 
         # Check for hard sell indicators
         hard_sell_patterns = [
@@ -96,7 +113,7 @@ class MaintenanceAgent:
             issues['ingredient_overload'] = True
 
         # Determine priority and if post needs optimization
-        if issues['has_placeholders']:
+        if issues['has_placeholders'] or issues['missing_image']:
             issues['priority'] = 'high'
             issues['needs_optimization'] = True
         elif len(issues['hard_sell_indicators']) > 3:
@@ -226,6 +243,30 @@ class MaintenanceAgent:
 
                 # Analyze post for issues
                 issues = self._analyze_post_issues(post)
+                
+                # --- NEW: CLEANUP & IMAGE FIX ---
+                current_content = content
+                cleaned_content = self._cleanup_ai_leftovers(current_content)
+                content_updated = False
+                
+                if cleaned_content != current_content:
+                    print(f"  [FIX] Cleaned AI leftovers from Post {post_id}")
+                    current_content = cleaned_content
+                    content_updated = True
+                
+                if issues['missing_image'] and not dry_run:
+                    print(f"  [FIX] Generating missing image for Post {post_id}")
+                    try:
+                        # Extract a simple prompt from the title
+                        img_prompt = f"Professional skincare product photography for {title}, high end, clean background, 4k"
+                        img_path = self.image_gen.generate_image(img_prompt)
+                        if img_path:
+                            media_id = self.publisher.upload_media(img_path, title=title)
+                            if media_id:
+                                self.publisher.update_post(post_id, {"featured_media": media_id})
+                                print(f"  [OK] Featured image set for Post {post_id}")
+                    except Exception as e:
+                        print(f"  [ERROR] Image generation failed for Post {post_id}: {e}")
 
                 # Determine what needs to be done based on mode
                 needs_fix = False
@@ -235,13 +276,19 @@ class MaintenanceAgent:
                     if issues['needs_optimization']:
                         needs_fix = True
                         fix_type = 'regenerate'
-                        print(f"Maintenance: Post {post_id} needs {issues['priority']} priority fix")
-
+                        print(f"  [TODO] Post {post_id} needs regeneration (Priority: {issues['priority']})")
+                
                 if mode in ['seo', 'both'] and not needs_fix:
-                    # For SEO mode, process all posts (or could add SEO-specific checks)
-                    if mode == 'seo':
-                        needs_fix = True
-                        fix_type = 'seo'
+                    needs_fix = True
+                    fix_type = 'seo'
+
+                # If we just needed cleanup or image fix and not full regeneration/seo
+                if not needs_fix and content_updated and not dry_run:
+                     self.publisher.update_post(post_id, {"content": current_content})
+                     print(f"  [OK] Cleaned content updated for Post {post_id}")
+                     fixed_count += 1
+                     processed_count += 1
+                     continue
 
                 if not needs_fix:
                     skipped_count += 1
@@ -256,7 +303,22 @@ class MaintenanceAgent:
                             if not dry_run:
                                 success = self._update_post(post_id, new_article)
                                 if success:
-                                    print(f"  [OK] Post {post_id} fixed successfully")
+                                    # Post-fix SEO update
+                                    seo_score = self.yoast.calculate_seo_score(
+                                        new_article.get('content_html', ''),
+                                        new_article.get('seo_keyphrase', ''),
+                                        new_article.get('title', ''),
+                                        new_article.get('seo_meta_description', '')
+                                    )
+                                    read_score = self.yoast.calculate_readability_score(new_article.get('content_html', ''))
+                                    self.yoast.update_yoast_meta_fields(post_id, {
+                                        'focus_keyword': new_article.get('seo_keyphrase'),
+                                        'seo_title': new_article.get('title'),
+                                        'meta_description': new_article.get('seo_meta_description'),
+                                        'seo_score': seo_score,
+                                        'readability_score': read_score
+                                    })
+                                    print(f"  [OK] Post {post_id} fixed and SEO scores updated")
                                     fixed_count += 1
                                 else:
                                     print(f"  [FAIL] Post {post_id} update failed")
@@ -264,43 +326,25 @@ class MaintenanceAgent:
                                 print(f"  [OK] Post {post_id} would be fixed (dry run)")
                                 fixed_count += 1
                         else:
-                            print(f"  [FAIL] Post {post_id} generation failed")
+                            print(f"  [FAIL] Post {post_id} regeneration failed")
 
                     elif fix_type == 'seo':
-                        # Enhanced Audit Logic (from Auto-Blogger-WP)
+                        # Enhanced Audit Logic
                         prompt = f"""
-                        You are a senior SEO editor and fact-checker. Audit the following WordPress post:
-                        
+                        You are a senior SEO editor. Audit and Optimize this post for 2026.
                         TITLE: {title}
-                        CONTENT: {content[:5000]}  # Increased token limit
+                        CONTENT: {current_content[:5000]}
                         
-                        TASKS:
-                        1. **Fact Check & Debug**: Search for any outdated information, broken logic, or old statistics. Update them to be current for 2026. This is CRITICAL.
-                        2. **Title Optimization**: Review the title. If it does not grab attention in 3 seconds (boring, too long), rewrite it to be a high-CTR, "click-bait" style professional title (max 60 chars).
-                        3. **SEO Optimization**: Improve heading hierarchy (H2, H3), ensure keywords are used naturally, and add alt text placeholders if missing.
-                        4. **Readability**: Break up long paragraphs and ensure the tone is professional yet engaging.
-                        5. **Internal Linking**: If you see opportunities to link to generic topics, use the search-style link: <a href="/?s=topic">topic</a>.
-                        
-                        Return the optimized content, new title, and notes in JSON format:
-                        {{
-                            "needs_update": true,
-                            "corrected_title": "New Title",
-                            "corrected_content_html": "Full optimized HTML",
-                            "seo_keyphrase": "Keyphrase",
-                            "seo_meta_description": "Meta description",
-                            "fact_check_notes": "What was fixed"
-                        }}
+                        Return optimized JSON.
                         """
-
                         response = call_vertex_with_retry(self.model, prompt)
                         if response:
                             try:
                                 res = json.loads(response.text.replace("```json", "").replace("```", "").strip())
-
                                 if res.get('needs_update'):
                                     update_data = {
                                         "title": res.get('corrected_title', title),
-                                        "content": res.get('corrected_content_html', ""),
+                                        "content": self._cleanup_ai_leftovers(res.get('corrected_content_html', "")),
                                         "meta": {
                                             '_yoast_wpseo_focuskw': res.get('seo_keyphrase', ''),
                                             '_yoast_wpseo_metadesc': res.get('seo_meta_description', '')
@@ -310,17 +354,31 @@ class MaintenanceAgent:
                                     if not dry_run:
                                         success = self.publisher.update_post(post_id, update_data)
                                         if success:
-                                            print(f"  [OK] Post {post_id} optimized (Facts & SEO)")
-                                            print(f"       Notes: {res.get('fact_check_notes')}")
+                                            # Update Yoast scores
+                                            seo_score = self.yoast.calculate_seo_score(
+                                                update_data['content'],
+                                                res.get('seo_keyphrase', ''),
+                                                update_data['title'],
+                                                res.get('seo_meta_description', '')
+                                            )
+                                            read_score = self.yoast.calculate_readability_score(update_data['content'])
+                                            self.yoast.update_yoast_meta_fields(post_id, {
+                                                'focus_keyword': res.get('seo_keyphrase'),
+                                                'seo_title': update_data['title'],
+                                                'meta_description': res.get('seo_meta_description'),
+                                                'seo_score': seo_score,
+                                                'readability_score': read_score
+                                            })
+                                            print(f"  [OK] Post {post_id} optimized and SEO scores updated")
                                             fixed_count += 1
                                     else:
                                         print(f"  [OK] Post {post_id} would be optimized (dry run)")
                                         fixed_count += 1
-                            except json.JSONDecodeError as e:
-                                print(f"  [ERROR] Failed to parse JSON for Post {post_id}: {e}")
+                            except Exception as e:
+                                print(f"  [ERROR] Audit processing failed for Post {post_id}: {e}")
 
                     processed_count += 1
-                    time.sleep(5)  # Delay to match rate limits
+                    time.sleep(5) 
 
                 except Exception as e:
                     print(f"  [ERROR] Maintenance Error on Post {post_id}: {e}")
