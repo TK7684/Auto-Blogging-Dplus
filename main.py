@@ -29,7 +29,7 @@ def main():
     load_dotenv()
     
     # 1. Setup
-    print(f"Starting Auto-Blogging v2.1 in {args.mode} mode...")
+    print(f"Starting Auto-Blogging v2.2.0 in {args.mode} mode...")
     
     from maintenance_agent import MaintenanceAgent
     from researcher_agent import ResearcherAgent
@@ -73,6 +73,9 @@ def main():
     # 2. Process based on Mode
     article = None
     target_file = None
+    product_name = None
+    product_content = None
+    target_product_data = None # Dictionary from CSV if applicable
     
     # Model Strategy for Vertex AI
     primary_model_flash = os.getenv("VERTEX_MODEL_NAME", "gemini-2.0-flash-exp")
@@ -141,57 +144,91 @@ def main():
         print("Step 2: Researching Hot Topics in Thailand...")
         hot_topic_data = execute_with_fallback(researcher, "research_hot_topics")
         
-        files = loader.get_product_files()
-        if not files:
-            print("No product files found in 'Products Data'.")
-            return
-
-        if args.product_file:
-            for f in files:
-                if args.product_file in f:
-                    target_file = f
-                    break
-            if not target_file:
-                print(f"Product file '{args.product_file}' not found.")
-                return
-        else:
-            # Smart Selection based on Hot Topic if available
+        # --- PRODUCT SELECTION LOGIC (CSV Priority) ---
+        products_from_csv = loader.load_products_from_csv("product_data.csv")
+        
+        if products_from_csv and not args.product_file:
+            print(f"Loaded {len(products_from_csv)} products from CSV.")
+            # Random selection or Smart Match from CSV
             if hot_topic_data and hot_topic_data.get('hot_topics'):
                 top_topic = hot_topic_data['hot_topics'][0]
                 print(f"Top Hot Topic: {top_topic['headline_th']}")
-                # Simple keyword matching for selection
-                best_file = None
+                # Simple keyword matching
+                best_product = None
                 best_score = -1
-                for f in files:
-                    fname = os.path.basename(f).lower()
-                    score = sum(1 for kw in top_topic.get('keywords', []) if kw.lower() in fname)
+                for p in products_from_csv:
+                    score = sum(1 for kw in top_topic.get('keywords', []) if kw.lower() in p['name'].lower())
                     if score > best_score:
                         best_score = score
-                        best_file = f
+                        best_product = p
                 
-                # If we found a good match, use it.
-                # If match score is 0, we might want to just rotate to keep variety
-                # but STILL use the hot topic for the "Connection" in the article
                 if best_score > 0:
-                     target_file = best_file
-                     print(f"matched product to trend: {target_file}")
+                     target_product_data = best_product
+                     print(f"matched product to trend: {target_product_data['name']}")
                 else:
-                     # Fallback to Smart Randomization (least recently used)
-                     sorted_files = sorted(files, key=lambda x: history.get(os.path.basename(x), "2000-01-01"))
-                     target_file = sorted_files[0]
-                     print(f"No direct match, rotating to: {target_file} (Will connect to trend)")
-
+                     # Random rotation
+                     target_product_data = random.choice(products_from_csv)
+                     print(f"No direct match, rotating random product: {target_product_data['name']}")
             else:
-                # Fallback to Smart Randomization (least recently used)
-                sorted_files = sorted(files, key=lambda x: history.get(os.path.basename(x), "2000-01-01"))
-                target_file = sorted_files[0]
+                 target_product_data = random.choice(products_from_csv)
+                 print(f"Randomly selected product: {target_product_data['name']}")
+            
+            product_name = target_product_data['name']
+            product_content = target_product_data['content']
 
-        print(f"Selected Product File: {os.path.basename(target_file)}")
+        else:
+            # Fallback to Text Files
+            files = loader.get_product_files()
+            if not files:
+                print("No product files found in 'Products Data' and CSV empty.")
+                return
+
+            if args.product_file:
+                for f in files:
+                    if args.product_file in f:
+                        target_file = f
+                        break
+                if not target_file:
+                    print(f"Product file '{args.product_file}' not found.")
+                    return
+            else:
+                # Smart Selection based on Hot Topic if available
+                if hot_topic_data and hot_topic_data.get('hot_topics'):
+                    top_topic = hot_topic_data['hot_topics'][0]
+                    print(f"Top Hot Topic: {top_topic['headline_th']}")
+                    # Simple keyword matching for selection
+                    best_file = None
+                    best_score = -1
+                    for f in files:
+                        fname = os.path.basename(f).lower()
+                        score = sum(1 for kw in top_topic.get('keywords', []) if kw.lower() in fname)
+                        if score > best_score:
+                            best_score = score
+                            best_file = f
+                    
+                    # If we found a good match, use it.
+                    # If match score is 0, we might want to just rotate to keep variety
+                    # but STILL use the hot topic for the "Connection" in the article
+                    if best_score > 0:
+                         target_file = best_file
+                         print(f"matched product to trend: {target_file}")
+                    else:
+                         # Fallback to Smart Randomization (least recently used)
+                         sorted_files = sorted(files, key=lambda x: history.get(os.path.basename(x), "2000-01-01"))
+                         target_file = sorted_files[0]
+                         print(f"No direct match, rotating to: {target_file} (Will connect to trend)")
+    
+                else:
+                    # Fallback to Smart Randomization (least recently used)
+                    sorted_files = sorted(files, key=lambda x: history.get(os.path.basename(x), "2000-01-01"))
+                    target_file = sorted_files[0]
+
+            if target_file:
+                print(f"Selected Product File: {os.path.basename(target_file)}")
+                product_content = loader.read_product(target_file)
+                product_name = loader.extract_product_name(product_content)
 
         # 3. Research & Data
-        product_content = loader.read_product(target_file)
-        product_name = loader.extract_product_name(product_content)
-
         print(f"Step 3: Deep Researching {product_name}...")
         research_results = execute_with_fallback(researcher, "research_product_topics", product_name, product_content)
 
@@ -217,8 +254,8 @@ def main():
         article = execute_with_fallback(
             generator,
             "generate_article",
-            product_name if target_file else "Refined Topic", 
-            (product_content if target_file else "") + f"\n\nRefinement: {review_results.get('editor_feedback')}", 
+            product_name, 
+            product_content + f"\n\nRefinement: {review_results.get('editor_feedback')}", 
             research_data=research_results if 'research_results' in locals() else None
         )
     else:
@@ -248,18 +285,28 @@ def main():
         if article.get('faq_schema_html'):
             final_content += f"\n\n{article['faq_schema_html']}"
 
+        # --- RANDOM SCHEDULING ---
+        from datetime import timedelta
+        scheduled_date = None
+        if args.mode in ['daily', 'weekly']:
+            offset_minutes = random.randint(10, 120)
+            scheduled_date = (datetime.now() + timedelta(minutes=offset_minutes)).isoformat()
+            print(f"📅 Scheduling post for: {scheduled_date} (Offset: {offset_minutes} mins)")
+
         post_id = publisher.create_post(
             title=article.get('title'),
             content=final_content,
-            status='publish',
+            status='publish' if not scheduled_date else 'future', # WP handles 'future' automatically if date is set
             slug=article.get('slug'),
-            seo_data=seo_data
+            seo_data=seo_data,
+            date=scheduled_date
         )
         if post_id:
-            print(f"Successfully published Post ID: {post_id}")
+            print(f"Successfully published/scheduled Post ID: {post_id}")
             history["__last_post_date__"] = datetime.now().strftime("%Y-%m-%d")
-            if target_file:
-                history[os.path.basename(target_file)] = datetime.now().isoformat()
+            # Log usage for non-file products too (using name as key)
+            key = os.path.basename(target_file) if target_file else f"CSV:{product_name}"
+            history[key] = datetime.now().isoformat()
             
             with open(history_file, 'w', encoding='utf-8') as f:
                 json.dump(history, f, indent=4)

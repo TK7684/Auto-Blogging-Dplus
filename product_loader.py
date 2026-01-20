@@ -32,6 +32,34 @@ class ProductLoader:
             return lines[0].strip()
         return "Unknown Product"
 
+    def load_products_from_csv(self, csv_path="product_data.csv"):
+        """Loads products from a CSV file."""
+        import csv
+        products = []
+        if not os.path.exists(csv_path):
+            print(f"CSV file not found: {csv_path}")
+            return products
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Flexible column names
+                    name = row.get('Product Name') or row.get('name') or row.get('title')
+                    content = row.get('Description') or row.get('description') or row.get('content') or ""
+                    keywords = row.get('Keywords') or row.get('keywords') or ""
+                    
+                    if name:
+                        products.append({
+                            'name': name.strip(),
+                            'content': content.strip(),
+                            'keywords': [k.strip() for k in keywords.split(',')] if keywords else []
+                        })
+        except Exception as e:
+            print(f"Error reading CSV {csv_path}: {e}")
+        
+        return products
+
 if __name__ == "__main__":
     loader = ProductLoader()
     files = loader.get_product_files()

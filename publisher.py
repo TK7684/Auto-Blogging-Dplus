@@ -39,7 +39,7 @@ class WordPressPublisher:
             print(f"Error uploading media: {e}")
             return None
 
-    def create_post(self, title, content, status='draft', category_ids=None, tag_ids=None, featured_media_id=None, slug=None, seo_data=None):
+    def create_post(self, title, content, status='draft', category_ids=None, tag_ids=None, featured_media_id=None, slug=None, seo_data=None, date=None):
         """Creates a new WordPress post with SEO data."""
         post_url = f"{self.api_url}/posts"
         
@@ -47,7 +47,7 @@ class WordPressPublisher:
             'title': title,
             'content': content,
             'status': status,
-            'date': datetime.now().isoformat()
+            'date': date if date else datetime.now().isoformat()
         }
         
         if slug:

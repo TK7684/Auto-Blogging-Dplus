@@ -267,53 +267,57 @@ class MaintenanceAgent:
                             print(f"  [FAIL] Post {post_id} generation failed")
 
                     elif fix_type == 'seo':
-                        # SEO optimization (original logic)
+                        # Enhanced Audit Logic (from Auto-Blogger-WP)
                         prompt = f"""
-                        You are a Maintenance Auditor & SEO Expert.
-                        Post Title: {title}
-                        Post Content: {content[:3000]}  # Truncate for token limits
-
-                        Your Goal: Upgrade this content to be modern, mobile-friendly, and SEO-optimized.
-
-                        Guidelines:
-                        1. **Title**: Make it CATCHY (under 60 chars) if it isn't already.
-                        2. **Structure**: Hook -> Intro -> Body -> Conclusion -> CTA.
-                        3. **SEO**: Identify a main Focus Keyphrase (Thai), Meta Description (160 chars).
-                        4. **Formatting**: Short paragraphs, bullet points.
-                        5. **Soft Sell**: Keep content educational, not promotional.
-
-                        Format output as JSON:
+                        You are a senior SEO editor and fact-checker. Audit the following WordPress post:
+                        
+                        TITLE: {title}
+                        CONTENT: {content[:5000]}  # Increased token limit
+                        
+                        TASKS:
+                        1. **Fact Check & Debug**: Search for any outdated information, broken logic, or old statistics. Update them to be current for 2026. This is CRITICAL.
+                        2. **Title Optimization**: Review the title. If it does not grab attention in 3 seconds (boring, too long), rewrite it to be a high-CTR, "click-bait" style professional title (max 60 chars).
+                        3. **SEO Optimization**: Improve heading hierarchy (H2, H3), ensure keywords are used naturally, and add alt text placeholders if missing.
+                        4. **Readability**: Break up long paragraphs and ensure the tone is professional yet engaging.
+                        5. **Internal Linking**: If you see opportunities to link to generic topics, use the search-style link: <a href="/?s=topic">topic</a>.
+                        
+                        Return the optimized content, new title, and notes in JSON format:
                         {{
                             "needs_update": true,
                             "corrected_title": "New Title",
                             "corrected_content_html": "Full optimized HTML",
                             "seo_keyphrase": "Keyphrase",
-                            "seo_meta_description": "Meta description"
+                            "seo_meta_description": "Meta description",
+                            "fact_check_notes": "What was fixed"
                         }}
                         """
 
                         response = call_vertex_with_retry(self.model, prompt)
                         if response:
-                            res = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+                            try:
+                                res = json.loads(response.text.replace("```json", "").replace("```", "").strip())
 
-                            if res.get('needs_update'):
-                                update_data = {
-                                    "title": res.get('corrected_title'),
-                                    "content": res.get('corrected_content_html'),
-                                    "meta": {
-                                        '_yoast_wpseo_focuskw': res.get('seo_keyphrase', ''),
-                                        '_yoast_wpseo_metadesc': res.get('seo_meta_description', '')
+                                if res.get('needs_update'):
+                                    update_data = {
+                                        "title": res.get('corrected_title', title),
+                                        "content": res.get('corrected_content_html', ""),
+                                        "meta": {
+                                            '_yoast_wpseo_focuskw': res.get('seo_keyphrase', ''),
+                                            '_yoast_wpseo_metadesc': res.get('seo_meta_description', '')
+                                        }
                                     }
-                                }
 
-                                if not dry_run:
-                                    success = self.publisher.update_post(post_id, update_data)
-                                    if success:
-                                        print(f"  [OK] Post {post_id} SEO optimized")
+                                    if not dry_run:
+                                        success = self.publisher.update_post(post_id, update_data)
+                                        if success:
+                                            print(f"  [OK] Post {post_id} optimized (Facts & SEO)")
+                                            print(f"       Notes: {res.get('fact_check_notes')}")
+                                            fixed_count += 1
+                                    else:
+                                        print(f"  [OK] Post {post_id} would be optimized (dry run)")
                                         fixed_count += 1
-                                else:
-                                    print(f"  [OK] Post {post_id} would be SEO optimized (dry run)")
-                                    fixed_count += 1
+                            except json.JSONDecodeError as e:
+                                print(f"  [ERROR] Failed to parse JSON for Post {post_id}: {e}")
 
                     processed_count += 1
                     time.sleep(5)  # Delay to match rate limits

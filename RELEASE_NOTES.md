@@ -1,24 +1,35 @@
-# Release Notes - v1.0.0
+# Auto-Blogging DPLUS v2.2.0 Release Notes
 
-**Auto-Blogging System for Thai Cosmetic Products**
+We are excited to announce version 2.2.0 of Auto-Blogging DPLUS! This release focuses on automation flexibility and content quality.
 
-## Overview
-This is the initial release of the fully automated blogging system designed to generate SEO-friendly, compliant articles for Thai cosmetic products. It leverages Google's Gemini 3 AI to create "soft-sell" content that educates users while promoting products.
+## 🚀 Key Features
 
-## Key Features
-- **AI-Powered Generation**: Creates engaging articles using "Soft Sell" prompt engineering (80% education, 20% promotion).
-- **Compliance First**: Built-in support for filtering content against Thai FDA cosmetic regulations (mock rules active, adaptable to real PDF data).
-- **Automated Publishing**: Deploys content directly to WordPress sites via REST API.
-- **Robust CLI**: Supports `daily` mode for automation and `dry_run` for verification.
+### 1. CSV Product Data Support
+You can now manage your product list in a simple `product_data.csv` file.
+- **Priority Loading**: The system prioritizes products in the CSV over individual text files.
+- **Random Selection**: Products are randomly selected from the CSV to ensure variety.
+- **Compatibility**: The old text-file method still works as a fallback.
 
-## Installation & Usage
-See `setup_guide.md` for detailed instructions.
+### 2. Smart Auto-Scheduling
+Avoid "bot-like" behavior with random scheduling.
+- **Random Offset**: Posts are scheduled 10 to 120 minutes in the future.
+- **WordPress Integration**: Uses native WordPress scheduling (`future` status).
 
+### 3. Enhanced Maintenance Agent
+Your old posts get smarter updates.
+- **Fact Checking**: The maintenance agent now explicitly checks for outdated info and updates it for 2026.
+- **Internal Linking**: Automatically identifies opportunities for internal links.
+- **SEO & Tone**: Improved prompts for "click-bait" professional titles and "soft sell" tone.
+
+## 🛠 Usage
+1.  Populate `product_data.csv` with your products (Name, Description, Keywords).
+2.  Run `main.py` as usual.
+    ```bash
+    python main.py --mode daily
+    ```
+
+## 🧪 Testing
+New unit tests (`tests/test_new_features.py`) cover CSV loading and Scheduling. Run them with:
 ```bash
-# Quick Start
-pip install -r requirements.txt
-python main.py --dry_run
+python tests/test_new_features.py
 ```
-
-## Known Issues
-- Real-time Gemini API compliance processing requires a stable model ID configuration (currently using mock rules).
