@@ -97,25 +97,14 @@ def main():
 
         fallback_model = secondary_model if initial_model != secondary_model else "gemini-2.0-flash-exp"
         
-        models_to_try = [initial_model, fallback_model]
-        # Remove duplicates
-        models_to_try = list(dict.fromkeys(models_to_try))
-
-        last_error = None
-        for model_name in models_to_try:
-            try:
-                agent.update_model(model_name)
-                res = getattr(agent, method_name)(*method_args, **method_kwargs)
-                if res: return res
-            except Exception as e:
-                last_error = e
-                print(f"Model ({model_name}) failed for {method_name}: {e}.")
-                if "429" in str(e):
-                    print("Quota exceeded, cooling down for 10 seconds...")
-                    time.sleep(10)
-        
-        print(f"All models failed for {method_name}. Last error: {last_error}")
-        return None
+        # The logic is now handled robustly inside call_vertex_with_retry in vertex_utils.py
+        # which will try multiple regions and model versions if 404/transient errors occur.
+        try:
+            res = getattr(agent, method_name)(*method_args, **method_kwargs)
+            return res
+        except Exception as e:
+            print(f"Error in {method_name}: {e}")
+            return None
 
     if args.mode == "weekly":
         print("Step 2: Performing Content Gap Research (Weekly)...")

@@ -183,89 +183,106 @@ def get_rate_limiter():
 def call_vertex_with_retry(model: GenerativeModel, prompt: str, max_retries: int = 3,
                           generation_config: Optional[GenerationConfig] = None) -> Optional[Any]:
     """
-    Calls Vertex AI API with rate limiting and exponential backoff.
-
-    Args:
-        model: Vertex AI GenerativeModel instance
-        prompt: The prompt to send
-        max_retries: Maximum number of retry attempts (default: 3)
-        generation_config: Optional generation config
-
-    Returns:
-        Response object or None if all retries fail
+    Calls Vertex AI API with rate limiting, exponential backoff, and regional fallbacks.
     """
     rate_limiter = get_rate_limiter()
-
-    # Extract model name from the model object
-    model_name = model._model_name
-
-    # 1. Check Cache
+    initial_model_name = model._model_name
+    
+    # Check Cache first
     if not str(prompt).strip():
         return None
-
-    cached_response = cache.get(str(prompt), model_name)
+    cached_response = cache.get(str(prompt), initial_model_name)
     if cached_response:
-        print(f"Vertex AI: Cache HIT for {model_name}")
-        # Create a mock response object with text attribute
+        print(f"Vertex AI: Cache HIT for {initial_model_name}")
         class MockResponse:
-            def __init__(self, text):
-                self.text = text
+            def __init__(self, text): self.text = text
         return MockResponse(cached_response["response"])
 
-    # 2. Check daily usage
+    # Daily usage check
     daily_usage = rate_limiter.get_daily_usage()
-    print(f"Vertex AI: Daily usage: {daily_usage}/{rate_limiter.requests_per_day}")
-
-    # Circuit Breaker: Stop completely if limit reached
     if daily_usage >= rate_limiter.requests_per_day:
-        print("XXX CIRCUIT BREAKER TRIPPED: Daily Quota Limit Reached. Stopping API calls. XXX")
+        print("XXX CIRCUIT BREAKER TRIPPED: Daily Quota Limit Reached. XXX")
         return None
 
-    # 3. Acquire Permission
-    if not rate_limiter.acquire(timeout=60):
-        print("Vertex AI: Rate limit timeout - could not acquire permission")
-        return None
+    # Fallback lists
+    models_to_try = [initial_model_name]
+    if "flash" in initial_model_name:
+        models_to_try.extend(["gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"])
+    elif "pro" in initial_model_name:
+        models_to_try.extend(["gemini-1.5-pro-001", "gemini-1.5-pro-002"])
+    
+    # Remove duplicates but keep order
+    models_to_try = list(dict.fromkeys(models_to_try))
+    
+    regions_to_try = ["us-central1", "us-east1", "europe-west1", "asia-southeast1"]
+    current_region = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    if current_region in regions_to_try:
+        regions_to_try.remove(current_region)
+    regions_to_try.insert(0, current_region)
 
-    time.sleep(random.uniform(0.5, 1.5))
+    for region in regions_to_try:
+        print(f"Vertex AI: Attempting calls in region {region}...")
+        try:
+            vertexai_init(
+                project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+                location=region
+            )
+        except Exception as e:
+            print(f"Vertex AI: Initialization failed for {region}: {e}")
+            continue
 
-    import logging
-    logger = logging.getLogger(__name__)
+        for m_name in models_to_try:
+            # Re-create model for each name/region
+            try:
+                # Re-check tools availability
+                tools = None
+                if GOOGLE_SEARCH_AVAILABLE:
+                    try:
+                        google_search = GoogleSearchRetrievalTool()
+                        tools = [Tool(google_search_retrieval=google_search)]
+                    except: pass
+                
+                temp_model = GenerativeModel(m_name, tools=tools)
+            except Exception as e:
+                print(f"Vertex AI: Could not create model {m_name} in {region}: {e}")
+                continue
 
-    def log_retry(retry_state):
-        print(f"Vertex AI: Retrying in {retry_state.next_action.sleep} seconds... "
-              f"(Attempt {retry_state.attempt_number})")
+            print(f"Vertex AI: Trying {m_name} (Usage: {rate_limiter.get_daily_usage()}/{rate_limiter.requests_per_day})")
+            
+            # Acquire rate limit permission
+            if not rate_limiter.acquire(timeout=30):
+                continue
 
-    @retry(
-        stop=stop_after_attempt(max_retries),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
-        retry=retry_if_exception_type((
-            exceptions.ServiceUnavailable,
-            exceptions.InternalServerError,
-            exceptions.GoogleAPIError
-        )),
-        before_sleep=log_retry,
-        reraise=True
-    )
-    def do_call():
-        if generation_config:
-            return model.generate_content(prompt, generation_config=generation_config)
-        return model.generate_content(prompt)
+            def do_call():
+                if generation_config:
+                    return temp_model.generate_content(prompt, generation_config=generation_config)
+                return temp_model.generate_content(prompt)
 
-    try:
-        response = do_call()
-        if response and hasattr(response, 'text') and response.text:
-            cache.set(str(prompt), model_name, response.text)
-        return response
-    except exceptions.ResourceExhausted as e:
-        print(f"Vertex AI: QUOTA EXCEEDED (429). Stopping immediately. {e}")
-        # Force increment usage to max to trip circuit breaker for next calls
-        with rate_limiter.daily_usage_lock:
-            rate_limiter.daily_usage = rate_limiter.requests_per_day + 1
-            rate_limiter._save_usage_log()
-        return None
-    except Exception as e:
-        print(f"Vertex AI Error after final attempt: {e}")
-        return None
+            try:
+                # Manual retry logic for standard transient errors
+                for attempt in range(max_retries):
+                    try:
+                        response = do_call()
+                        if response and hasattr(response, 'text') and response.text:
+                            cache.set(str(prompt), m_name, response.text)
+                            return response
+                        break # Success but empty? stop
+                    except (exceptions.ServiceUnavailable, exceptions.InternalServerError, exceptions.GoogleAPIError) as transient_e:
+                        wait = 2 ** attempt
+                        print(f"Vertex AI: Transient error, retrying in {wait}s... ({transient_e})")
+                        time.sleep(wait)
+                    except exceptions.ResourceExhausted:
+                        print(f"Vertex AI: 429 Resource Exhausted for {m_name}")
+                        break # Try next model
+                    except exceptions.NotFound as e:
+                        print(f"Vertex AI: 404 Not Found for {m_name} in {region}")
+                        break # Try next model
+            except Exception as e:
+                print(f"Vertex AI: Unexpected error for {m_name}: {e}")
+                continue
+
+    print("Vertex AI: All regions and models failed.")
+    return None
 
 
 def create_vertex_model(model_name: str = "gemini-1.5-flash",
@@ -274,46 +291,22 @@ def create_vertex_model(model_name: str = "gemini-1.5-flash",
                        use_search_tool: bool = False) -> GenerativeModel:
     """
     Creates a Vertex AI GenerativeModel instance with the specified configuration.
-
-    Args:
-        model_name: The model name (e.g., "gemini-2.0-flash-exp", "gemini-1.5-flash")
-        project: GCP project ID (defaults to GOOGLE_CLOUD_PROJECT env var)
-        location: GCP region (default: "us-central1")
-        use_search_tool: Whether to enable Google Search retrieval tool
-
-    Returns:
-        GenerativeModel instance
+    Note: call_vertex_with_retry will handle re-init if needed.
     """
     load_dotenv()
-
-    # Initialize Vertex AI
     vertexai_init(
         project=project or os.getenv("GOOGLE_CLOUD_PROJECT"),
         location=location or os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
     )
-
-    # Configure tools if search is enabled and available
     tools = None
-    if use_search_tool:
-        if not GOOGLE_SEARCH_AVAILABLE:
-            print("WARNING: Google Search tool not available in this Vertex AI SDK version. "
-                  "Proceeding without search tool.")
-        else:
-            google_search = GoogleSearchRetrievalTool()
-            tools = [Tool(google_search_retrieval=google_search)]
-
+    if use_search_tool and GOOGLE_SEARCH_AVAILABLE:
+        google_search = GoogleSearchRetrievalTool()
+        tools = [Tool(google_search_retrieval=google_search)]
     return GenerativeModel(model_name, tools=tools)
 
 
 def get_model_name_from_env(fallback: str = "gemini-1.5-flash") -> str:
-    """
-    Gets the model name from environment variable with fallback.
-
-    Args:
-        fallback: Default model name if env var not set
-
-    Returns:
-        Model name string
-    """
+    """Gets the model name from environment variable with fallback."""
     load_dotenv()
     return os.getenv("VERTEX_MODEL_NAME", fallback)
+
