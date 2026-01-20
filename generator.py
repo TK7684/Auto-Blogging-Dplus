@@ -116,11 +116,12 @@ class ContentGenerator:
            - Use natural Thai expressions.
            - Avoid robotic or translated-sounding phrases.
 
-        6. **CTA Placement**
-           - **ZERO** CTAs in the body.
-           - ONE subtle, polite sentence at the very end:
-           - "สำหรับผู้ที่สนใจผลิตภัณฑ์ที่มีส่วนผสมของ [Ingredient], สามารถดูข้อมูลเพิ่มเติมของ {self.brand_guidelines.get('brand_name')} ได้ที่เว็บไซต์หลักของเรา"
-           - DO NOT link to Shopee/Lazada in the text.
+        6. **CTA Placement (Crucial)**
+           - **ZERO** hard-sell language in the body.
+           - At the very end, include a clear but non-aggressive Call to Action (CTA).
+           - Explicitly providing a link to buy the product discussed as the perfect solution to the educational topics covered.
+           - Format as a separate section: "### สนใจดูแลผิวด้วย [Ingredient]? ..." 
+           - Include the following link: {self.brand_guidelines.get('social_links', {}).get('shopee', 'https://shopee.co.th')}
 
         7. **FAQ Section**
            - 5-7 frequently asked questions

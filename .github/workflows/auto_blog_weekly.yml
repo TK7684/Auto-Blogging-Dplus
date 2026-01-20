@@ -1,16 +1,16 @@
-name: Auto-Blogging Daily
+name: Auto-Blogging Weekly (Deep Research)
 
 on:
   schedule:
-    # Runs at 03:00 UTC (10:00 AM Thailand Time) every day
-    - cron: '0 3 * * *'
-  workflow_dispatch: # Allows manual trigger
+    # Runs at 04:00 UTC (11:00 AM Thailand Time) every Sunday
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
 
 jobs:
   build-and-run:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Needed to commit history.json back
+      contents: write
 
     steps:
     - name: Checkout Code
@@ -33,7 +33,7 @@ jobs:
     - name: Set up gcloud
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Run Auto-Blogging Script
+    - name: Run Auto-Blogging Weekly
       env:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: us-central1
@@ -43,13 +43,11 @@ jobs:
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
         IMAGE_GENERATION_ENABLED: "true"
       run: |
-        python main.py --mode daily
+        python main.py --mode weekly
 
     - name: Commit History
-      # Saves the updated post_history.json back to the repo
-      # so we don't repeat products.
       run: |
         git config --global user.name 'GitHub Action'
         git config --global user.email 'action@github.com'
         git add post_history.json vertex_usage.json
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update post history [skip ci]" && git push)
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update post history (Weekly) [skip ci]" && git push)

@@ -16,6 +16,7 @@ if sys.platform == "win32":
 from product_loader import ProductLoader
 from generator import ContentGenerator
 from publisher import WordPressPublisher
+from image_generator import ImageGenerator
 
 def main():
     parser = argparse.ArgumentParser(description="Auto-Blogging for Thai Cosmetic Products")
@@ -46,6 +47,11 @@ def main():
         wp_user = os.getenv("WP_USER")
         wp_pwd = os.getenv("WP_APP_PASSWORD")
         publisher = WordPressPublisher(wp_url, wp_user, wp_pwd)
+        
+        image_gen_enabled = os.getenv("IMAGE_GENERATION_ENABLED", "false").lower() == "true"
+        image_gen = None
+        if image_gen_enabled:
+            image_gen = ImageGenerator()
     except Exception as e:
         print(f"Setup Error: {e}")
         return
@@ -261,6 +267,26 @@ def main():
     else:
         print("Reviewer: Article Approved!")
 
+    # 5.5 Image Generation
+    featured_media_id = None
+    if image_gen and not args.dry_run:
+        print("Step 5.5: Generating featured image...")
+        # Target topic for image: use product name or hot topic
+        img_topic = product_name
+        if hot_topic_data and hot_topic_data.get('hot_topics'):
+            img_topic = f"{product_name} related to {hot_topic_keywords[0] if hot_topic_keywords else 'skincare trend'}"
+        
+        img_prompt = image_gen.create_prompt_from_article(article.get('title'), img_topic)
+        local_img_path = image_gen.generate_image(img_prompt)
+        
+        if local_img_path:
+            featured_media_id = publisher.upload_media(local_img_path, title=article.get('title'))
+            # Cleanup local image
+            try:
+                os.remove(local_img_path)
+            except:
+                pass
+
     # 6. Publish
     wp_url = os.getenv("WP_URL")
     wp_user = os.getenv("WP_USER")
@@ -299,7 +325,8 @@ def main():
             status='publish' if not scheduled_date else 'future', # WP handles 'future' automatically if date is set
             slug=article.get('slug'),
             seo_data=seo_data,
-            date=scheduled_date
+            date=scheduled_date,
+            featured_media_id=featured_media_id
         )
         if post_id:
             print(f"Successfully published/scheduled Post ID: {post_id}")
