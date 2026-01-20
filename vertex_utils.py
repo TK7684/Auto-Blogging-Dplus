@@ -47,7 +47,7 @@ class VertexRateLimiter:
 
         Args:
             requests_per_minute: Maximum requests per minute (default: 15)
-            requests_per_day: Maximum requests per day (default: 1500)
+            requests_per_day: Maximum requests per day (default: 2500)
         """
         self.requests_per_minute = requests_per_minute
         self.requests_per_day = requests_per_day
@@ -175,7 +175,7 @@ def get_rate_limiter():
         # Conservative limits for Vertex AI
         _rate_limiter = VertexRateLimiter(
             requests_per_minute=10,
-            requests_per_day=1500
+            requests_per_day=2500
         )
     return _rate_limiter
 
@@ -268,7 +268,7 @@ def call_vertex_with_retry(model: GenerativeModel, prompt: str, max_retries: int
         return None
 
 
-def create_vertex_model(model_name: str = "gemini-2.0-flash-exp",
+def create_vertex_model(model_name: str = "gemini-1.5-flash",
                        project: Optional[str] = None,
                        location: str = "us-central1",
                        use_search_tool: bool = False) -> GenerativeModel:
@@ -305,7 +305,7 @@ def create_vertex_model(model_name: str = "gemini-2.0-flash-exp",
     return GenerativeModel(model_name, tools=tools)
 
 
-def get_model_name_from_env(fallback: str = "gemini-2.0-flash-exp") -> str:
+def get_model_name_from_env(fallback: str = "gemini-1.5-flash") -> str:
     """
     Gets the model name from environment variable with fallback.
 

@@ -37,7 +37,7 @@ jobs:
       env:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: us-central1
-        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
+        VERTEX_MODEL_NAME: gemini-1.5-flash
         WP_URL: ${{ secrets.WP_URL }}
         WP_USER: ${{ secrets.WP_USER }}
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
@@ -51,5 +51,6 @@ jobs:
       run: |
         git config --global user.name 'GitHub Action'
         git config --global user.email 'action@github.com'
+        touch post_history.json vertex_usage.json
         git add post_history.json vertex_usage.json
         git diff --quiet && git diff --staged --quiet || (git commit -m "Update post history [skip ci]" && git push)
