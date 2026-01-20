@@ -1,0 +1,19 @@
+# Exclude secrets
+.env
+.env.local
+*-key.json
+*credentials.json
+auto-blogging-dplus-*.json
+
+# Exclude python artifacts
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Exclude runtime artifacts
+dry_run_output*.json
+*.log
+debug_imports.py
+test_results.txt
+tmp*/
