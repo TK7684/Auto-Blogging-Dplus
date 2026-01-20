@@ -137,7 +137,26 @@ def main():
         if gap_results and gap_results.get('content_gaps'):
             best_gap = gap_results['content_gaps'][0]
             print(f"Identified Content Gap: {best_gap['proposed_title']}")
-            article = execute_with_fallback(generator, "rewrite_competitor_content", best_gap, "Thailand Beauty Trends")
+            
+            # --- PRODUCT SELECTION FOR WEEKLY ---
+            products_from_csv = loader.load_products_from_csv("product_data.csv")
+            target_product_data = None
+            if products_from_csv:
+                best_product = None
+                best_score = -1
+                for p in products_from_csv:
+                    # Match score against gap keywords/topics
+                    score = sum(1 for kw in best_gap.get('keywords', []) if kw.lower() in (p['name'] + p['content']).lower())
+                    if score > best_score:
+                        best_score = score
+                        best_product = p
+                target_product_data = best_product if best_score > 0 else random.choice(products_from_csv)
+            
+            product_name = target_product_data['name'] if target_product_data else "Unknown Skincare"
+            product_content = target_product_data['content'] if target_product_data else ""
+            
+            print(f"Linking Weekly Deep Research to Product: {product_name}")
+            article = execute_with_fallback(generator, "rewrite_competitor_content", best_gap, product_name, product_description=product_content)
         else:
             print("Gap analysis failed. Falling back to hot topic.")
             args.mode = "daily"

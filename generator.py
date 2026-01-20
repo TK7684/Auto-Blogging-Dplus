@@ -144,28 +144,33 @@ class ContentGenerator:
         """
         return self._call_gemini(prompt)
 
-    def rewrite_competitor_content(self, competitor_data, target_niche):
+    def rewrite_competitor_content(self, competitor_data, product_name, product_description=""):
         """
-        Rewrites competitor content with added scientific depth and investigative journalist tone.
+        Rewrites competitor content with added scientific depth and investigative journalist tone,
+        linking it to a specific brand product.
         """
         prompt = f"""
-        You are an Investigative Journalist and SEO Expert.
+        You are an Investigative Journalist and SEO Expert focusing on skincare science.
         
-        Competitor Article Summary:
+        Competitor Article Summary (The GAP we are filling):
         {json.dumps(competitor_data, ensure_ascii=False)}
+        
+        Product to Link: {product_name}
+        Product Info: {product_description}
         
         Brand Identity: {self.brand_guidelines.get('brand_name')}
         Brand tone: {self.brand_guidelines.get('tone_of_voice')}
-        CTA: {self.brand_guidelines.get('social_links', {}).get('shopee')}
         
         Task:
-        1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC.
-        2. Tone: Investigative and authoritative.
+        1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC than the competitor.
+        2. Tone: Investigative and authoritative (Friend to Friend).
         3. **STRICT THAI LANGUAGE**.
         4. **Length: 1200+ words**.
-        5. Integrate scientific findings that are hidden or missed by the competitor.
-        6. Include [IMAGE_PLACEHOLDER_X] and [INSERT_INTERNAL_LINK:topic].
-        7. Include FAQ section with Schema.org markup.
+        5. Integrate scientific findings (ingredients, cellular effects) that are hidden or missed by the competitor.
+        6. **SOFT SELL**: Focus on the education/science. Mention the product {product_name} only at the end as the recommended solution.
+        7. NO placeholders. Use real content.
+        8. Include FAQ section with Schema.org markup.
+        9. **CTA**: Clear link to {self.brand_guidelines.get('social_links', {}).get('shopee', 'https://shopee.co.th')}
         
         Output Format: Raw JSON (same keys as generate_article).
         Do not use markdown formatting.

@@ -45,8 +45,8 @@ class ProductLoader:
                 reader = csv.DictReader(f)
                 for row in reader:
                     # Flexible column names
-                    name = row.get('Product Name') or row.get('name') or row.get('title')
-                    content = row.get('Description') or row.get('description') or row.get('content') or ""
+                    name = row.get('Product Name') or row.get('name') or row.get('title') or row.get('product_name')
+                    content = row.get('Description') or row.get('description') or row.get('content') or row.get('product_description') or ""
                     keywords = row.get('Keywords') or row.get('keywords') or ""
                     
                     if name:
