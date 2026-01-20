@@ -1,0 +1,9 @@
+# Google Cloud Vertex AI SDK
+google-cloud-aiplatform>=1.70.0
+
+# HTTP and utilities
+requests
+python-dotenv
+tenacity
+pydantic
+feedparser
