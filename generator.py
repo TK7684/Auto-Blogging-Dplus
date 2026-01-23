@@ -2,6 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 from vertex_utils import create_vertex_model, get_model_name_from_env, call_vertex_with_retry
+from vertexai.generative_models import GenerationConfig
 
 class ContentGenerator:
     def __init__(self):
@@ -15,19 +16,19 @@ class ContentGenerator:
                            "Please set your Google Cloud Project ID.")
 
         self.model = create_vertex_model(self.model_name)
-        
+
         # Load brand guidelines
         self.brand_guidelines = {}
         if os.path.exists("brand_guidelines.json"):
             with open("brand_guidelines.json", "r", encoding="utf-8") as f:
                 self.brand_guidelines = json.load(f)
-        
+
         # Load compliance rules
         self.compliance_rules = {}
         if os.path.exists("compliance_rules.json"):
             with open("compliance_rules.json", "r", encoding="utf-8") as f:
                 self.compliance_rules = json.load(f)
-        
+
     def update_model(self, model_name):
         """Updates the underlying Vertex AI model."""
         self.model_name = model_name
@@ -84,63 +85,86 @@ class ContentGenerator:
         Product Info: {product_description}
         {research_context}
 
-        CRITICAL CONTENT GUIDELINES - READ CAREFULLY:
+        =====================================================================
+        CRITICAL SEO REQUIREMENTS - MUST FOLLOW EXACTLY:
+        =====================================================================
 
-        1. **STRICT SOFT SELL APPROACH (95% Education, 5% Context)**
-           - This is an EDUCATIONAL article. Do NOT write it as a product review or sales pitch.
-           - Focus entirely on the *problem* (e.g., acne, aging) and the *solution* (e.g., ingredients, habits).
-           - **FORBIDDEN WORDS**: "buy", "order", "price", "promotion", "sale", "limited", "shop now", "deal".
-           - Mention the product ONLY ONCE or TWICE in the entire body, and only as a "helpful example" of a product containing the ingredients discussed.
-           - If the Hot Topic is about "Glass Skin", write about "How to get Glass Skin naturally", not "Buy this cream for Glass Skin".
+        1. **KEYPHRASE SELECTION (MANDATORY)**
+           - Choose ONE main Thai keyword phrase (3-5 words) related to the topic
+           - This keyphrase MUST be the focus of the entire article
+           - Examples: "คอลลาเจนบำรุงผิว", "วิตามินซีให้ผิวใส", "โสมดำบำรุงผิว"
+           - Place this exact keyphrase in the "seo_keyphrase" field
 
-        2. **TREND & INGREDIENT FOCUS**
-           {'- CONNECT TO TREND: Explain why ' + ', '.join(hot_topic_keywords) + ' is trending right now.' if hot_topic_keywords else '- Focus on current skincare standards.'}
-           - Explain the SCIENCE: How do the ingredients actually work at a cellular level?
-           - Include 3+ lifestyle tips (diet for skin, sleep hygiene, stress) that have NOTHING to do with the product.
+        2. **TITLE FORMAT (MANDATORY)**
+           - MUST start with the keyphrase (exact match)
+           - Keep under 60 characters total
+           - Format: "[Keyphrase] - Brief benefit phrase"
+           - Example: "คอลลาเจนบำรุงผิว - 5 วิธีเสริมสร้างผิวอ่อนเยาว์"
 
-        3. **NO PLACEHOLDERS - REAL CONTENT ONLY**
-           - DO NOT use [IMAGE_PLACEHOLDER_X] - instead, use relevant emoji icons or descriptive section breaks.
-           - DO NOT use [INSERT_INTERNAL_LINK:topic] - instead, write natural contextual mentions.
-           - If suggesting related topics, write them as normal text: "คุณอาจสนใจบทความเกี่ยวกับ [หัวข้อ] ได้"
+        3. **META DESCRIPTION (MANDATORY)**
+           - MUST include the keyphrase naturally
+           - Exactly 150-160 characters (no more, no less)
+           - Must be compelling and educational
 
-        4. **Structure & Formatting**
-           - H1: Main title (Must be catchy/educational, e.g., "5 Secrets to Glass Skin...", NOT "Product Name Review")
-           - H2: Section headers (educational topics)
-           - H3: Subsections if needed
-           - Short paragraphs (2-3 sentences max for mobile)
-           - Use bullet points for easy reading
-           - Include 2-3 relevant emoji throughout to break up text
+        4. **SLUG (MANDATORY)**
+           - Must include English translation of the keyphrase
+           - Use lowercase, hyphens between words
+           - Example: "collagen-skin-nourishment-tips"
 
-        5. **Thai Language & Tone**
-           - Professional but friendly (Friend to Friend).
-           - Use natural Thai expressions.
-           - Avoid robotic or translated-sounding phrases.
+        5. **INTRODUCTION (MANDATORY)**
+           - FIRST paragraph MUST include the keyphrase within the first 2 sentences
+           - Hook the reader immediately
 
-        6. **CTA Placement (Crucial)**
-           - **ZERO** hard-sell language in the body.
-           - At the very end, include a clear but non-aggressive Call to Action (CTA).
-           - Explicitly providing a link to buy the product discussed as the perfect solution to the educational topics covered.
-           - Format as a separate section: "### สนใจดูแลผิวด้วย [Ingredient]? ..." 
-           - Include the following link: {self.brand_guidelines.get('social_links', {}).get('shopee', 'https://shopee.co.th')}
+        6. **SUBHEADINGS (MANDATORY)**
+           - At least ONE H2 or H3 MUST contain the keyphrase
+           - Use descriptive, educational subheadings
 
-        7. **FAQ Section**
-           - 5-7 frequently asked questions
-           - Questions should be 100% EDUCATIONAL (e.g., "Vitamin C helps with what?", "Can I use Niacinamide in the morning?").
-           - NO questions specific to the product (e.g., "How much is this cream?").
+        7. **CONTENT LENGTH (MANDATORY)**
+           - Minimum 1200 words (comprehensive coverage)
+           - Detailed explanations for each point
+
+        8. **IMAGES WITH ALT TEXT (MANDATORY)**
+           - Include 2-3 images using this EXACT format:
+             <img src="placeholder.jpg" alt="[รูปภาพ] [keyphrase] คำอธิบายเพิ่มเติม">
+           - Alt text MUST include the keyphrase
+           - Images must be relevant to the content
+
+        9. **INTERNAL LINKS (MANDATORY)**
+           - Add 2-3 internal links using this EXACT format:
+             <a href="https://dplusskin.co.th/skincare-tips">ดูเพิ่มเติมเกี่ยวกับการดูแลผิว</a>
+             <a href="https://dplusskin.co.th/collagen-boost">คอลลาเจนเสริมสร้างผิว</a>
+           - Links must point to dplusskin.co.th
+
+        10. **OUTBOUND LINKS (MANDATORY)**
+            - Add 1-2 authoritative outbound links:
+              <a href="https://example.com/scientific-source" target="_blank" rel="nofollow">แหล่งอ้างอิงวิจัย</a>
+
+        11. **KEYPHRASE DENSITY (MANDATORY)**
+            - Keyphrase must appear 3-5 times naturally throughout the content
+            - In: title, introduction, 1+ subheading, body paragraphs, conclusion
+
+        =====================================================================
+        CONTENT GUIDELINES:
+        =====================================================================
+
+        - **STRICT SOFT SELL**: Focus on education, NOT sales
+        - **NO CTA**: Don't ask them to buy anything
+        - **Thai Language**: Professional but friendly
+        - **Structure**: Quick Review → Introduction → Body → Conclusion → FAQ
 
         Output Format: Raw JSON matching this structure:
         {{
-            "title": "Thai Educational Title (catchy, trend-focused)",
-            "content_html": "Full HTML with H tags, short paragraphs, NO placeholders, FAQ section at end",
+            "title": "[Keyphrase] - Brief title under 60 chars",
+            "content_html": "Full HTML with H tags, images with alt text containing keyphrase, internal links to dplusskin.co.th, outbound links, 1200+ words, FAQ section at end",
             "excerpt": "Educational summary (2-3 sentences)",
-            "seo_keyphrase": "Main Thai keyword phrase (related to topic/ingredient, not product name)",
-            "seo_meta_description": "Educational meta description (150-160 chars)",
-            "slug": "english-url-slug-topic-focused",
+            "seo_keyphrase": "Thai keyphrase phrase (3-5 words, MUST appear in title, intro, subheading, content)",
+            "seo_meta_description": "Educational meta description with keyphrase (exactly 150-160 characters)",
+            "slug": "english-url-slug-with-keyphrase-translation",
             "suggested_categories": ["Skincare Education", "Health Tips", "Trends"],
             "faq_schema_html": "<script type='application/ld+json'>FAQ schema markup</script>"
         }}
 
-        Remember: Your goal is to be a TRUSTED INFORMANT. If you sell too hard, the user leaves. Educate them so well they trust your advice naturally.
+        Remember: You are writing as a TRUSTED EDUCATIONAL SOURCE.
         """
         return self._call_gemini(prompt)
 
@@ -151,27 +175,57 @@ class ContentGenerator:
         """
         prompt = f"""
         You are an Investigative Journalist and SEO Expert focusing on skincare science.
-        
+
         Competitor Article Summary (The GAP we are filling):
         {json.dumps(competitor_data, ensure_ascii=False)}
-        
+
         Product to Link: {product_name}
         Product Info: {product_description}
-        
+
         Brand Identity: {self.brand_guidelines.get('brand_name')}
         Brand tone: {self.brand_guidelines.get('tone_of_voice')}
-        
+
+        =====================================================================
+        CRITICAL SEO REQUIREMENTS - MUST FOLLOW EXACTLY:
+        =====================================================================
+
+        1. **KEYPHRASE SELECTION (MANDATORY)**
+           - Choose ONE main Thai keyword phrase (3-5 words) related to the topic
+           - This keyphrase MUST be the focus of the entire article
+
+        2. **TITLE FORMAT (MANDATORY)**
+           - MUST start with the keyphrase
+           - Keep under 60 characters total
+
+        3. **META DESCRIPTION (MANDATORY)**
+           - MUST include the keyphrase naturally
+           - Exactly 150-160 characters
+
+        4. **INTRODUCTION (MANDATORY)**
+           - FIRST paragraph MUST include the keyphrase within first 2 sentences
+
+        5. **SUBHEADINGS (MANDATORY)**
+           - At least ONE H2 or H3 MUST contain the keyphrase
+
+        6. **IMAGES WITH ALT TEXT (MANDATORY)**
+           - Include 2-3 images with alt text containing keyphrase
+
+        7. **INTERNAL LINKS (MANDATORY)**
+           - Add 2-3 internal links to dplusskin.co.th
+
+        8. **CONTENT LENGTH (MANDATORY)**
+           - Minimum 1200 words
+
         Task:
-        1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC than the competitor.
+        1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC.
         2. Tone: Investigative and authoritative (Friend to Friend).
         3. **STRICT THAI LANGUAGE**.
         4. **Length: 1200+ words**.
-        5. Integrate scientific findings (ingredients, cellular effects) that are hidden or missed by the competitor.
-        6. **SOFT SELL**: Focus on the education/science. Mention the product {product_name} only at the end as the recommended solution.
-        7. NO placeholders. Use real content.
+        5. **Structure**: Quick Review -> Intro -> Body -> Conclusion.
+        6. **NO HARD SELL / NO CTA**. Focus purely on education.
+        7. Include images with alt text, internal links, outbound links.
         8. Include FAQ section with Schema.org markup.
-        9. **CTA**: Clear link to {self.brand_guidelines.get('social_links', {}).get('shopee', 'https://shopee.co.th')}
-        
+
         Output Format: Raw JSON (same keys as generate_article).
         Do not use markdown formatting.
         """
@@ -181,7 +235,12 @@ class ContentGenerator:
         """Call Vertex AI with the prompt."""
         try:
             print("Generator: Calling Vertex AI...")
-            response = call_vertex_with_retry(self.model, prompt)
+            # Use maximum token limit for comprehensive articles (8192 max)
+            generation_config = GenerationConfig(
+                max_output_tokens=8192,
+                temperature=0.7
+            )
+            response = call_vertex_with_retry(self.model, prompt, generation_config=generation_config)
             if not response:
                 print("Generator: API returned no response.")
                 return None
@@ -190,7 +249,18 @@ class ContentGenerator:
             try:
                 return json.loads(content)
             except json.JSONDecodeError as je:
-                print(f"Generator Error: Failed to parse JSON. Content: {content[:200]}...")
+                print(f"Generator Error: Failed to parse JSON. Content: {content[:500]}...")
+                # Try to extract partial JSON if response was truncated
+                if '{' in content and '}' in content:
+                    # Find first { and last }
+                    start = content.find('{')
+                    end = content.rfind('}') + 1
+                    try:
+                        partial_json = json.loads(content[start:end])
+                        print("Generator: Recovered partial JSON (may be incomplete).")
+                        return partial_json
+                    except:
+                        pass
                 return None
         except Exception as e:
             print(f"Generator Error: {e}")
