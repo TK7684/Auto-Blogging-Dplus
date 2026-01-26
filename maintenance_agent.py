@@ -284,9 +284,12 @@ class MaintenanceAgent:
 
                 # If we just needed cleanup or image fix and not full regeneration/seo
                 if not needs_fix and content_updated and not dry_run:
-                     self.publisher.update_post(post_id, {"content": current_content})
-                     print(f"  [OK] Cleaned content updated for Post {post_id}")
-                     fixed_count += 1
+                     update_success = self.publisher.update_post(post_id, {"content": current_content})
+                     if update_success:
+                         print(f"  [OK] Cleaned content updated for Post {post_id}")
+                         fixed_count += 1
+                     else:
+                         print(f"  [FAIL] Could not update content for Post {post_id}")
                      processed_count += 1
                      continue
 
@@ -304,22 +307,27 @@ class MaintenanceAgent:
                                 success = self._update_post(post_id, new_article)
                                 if success:
                                     # Post-fix SEO update
-                                    seo_score = self.yoast.calculate_seo_score(
-                                        new_article.get('content_html', ''),
-                                        new_article.get('seo_keyphrase', ''),
-                                        new_article.get('title', ''),
-                                        new_article.get('seo_meta_description', '')
-                                    )
-                                    read_score = self.yoast.calculate_readability_score(new_article.get('content_html', ''))
-                                    self.yoast.update_yoast_meta_fields(post_id, {
-                                        'focus_keyword': new_article.get('seo_keyphrase'),
-                                        'seo_title': new_article.get('title'),
-                                        'meta_description': new_article.get('seo_meta_description'),
-                                        'seo_score': seo_score,
-                                        'readability_score': read_score
-                                    })
-                                    print(f"  [OK] Post {post_id} fixed and SEO scores updated")
-                                    fixed_count += 1
+                                    try:
+                                        seo_score = self.yoast.calculate_seo_score(
+                                            new_article.get('content_html', ''),
+                                            new_article.get('seo_keyphrase', ''),
+                                            new_article.get('title', ''),
+                                            new_article.get('seo_meta_description', '')
+                                        )
+                                        read_score = self.yoast.calculate_readability_score(new_article.get('content_html', ''))
+                                        self.yoast.update_yoast_meta_fields(post_id, {
+                                            'focus_keyword': new_article.get('seo_keyphrase'),
+                                            'seo_title': new_article.get('title'),
+                                            'meta_description': new_article.get('seo_meta_description'),
+                                            'seo_score': seo_score,
+                                            'readability_score': read_score
+                                        })
+                                        print(f"  [OK] Post {post_id} fixed and SEO scores updated")
+                                        fixed_count += 1
+                                    except Exception as seo_e:
+                                        print(f"  [WARN] SEO update failed for Post {post_id}: {seo_e}")
+                                        print(f"  [OK] Post {post_id} content fixed (SEO update skipped)")
+                                        fixed_count += 1
                                 else:
                                     print(f"  [FAIL] Post {post_id} update failed")
                             else:
@@ -334,13 +342,29 @@ class MaintenanceAgent:
                         You are a senior SEO editor. Audit and Optimize this post for 2026.
                         TITLE: {title}
                         CONTENT: {current_content[:5000]}
-                        
-                        Return optimized JSON.
+
+                        Return optimized JSON with these exact fields:
+                        {{
+                            "needs_update": true/false,
+                            "corrected_title": "optimized title",
+                            "corrected_content_html": "optimized content",
+                            "seo_keyphrase": "main keyword",
+                            "seo_meta_description": "meta description 150-160 chars"
+                        }}
+                        Do not use markdown formatting.
                         """
                         response = call_vertex_with_retry(self.model, prompt)
                         if response:
                             try:
-                                res = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+                                # Clean and parse JSON with better error handling
+                                content = response.text
+                                # Remove markdown code blocks if present
+                                content = content.replace("```json", "").replace("```", "")
+                                # Remove any leading/trailing whitespace
+                                content = content.strip()
+
+                                res = json.loads(content)
+
                                 if res.get('needs_update'):
                                     update_data = {
                                         "title": res.get('corrected_title', title),
@@ -374,6 +398,41 @@ class MaintenanceAgent:
                                     else:
                                         print(f"  [OK] Post {post_id} would be optimized (dry run)")
                                         fixed_count += 1
+                            except json.JSONDecodeError as je:
+                                print(f"  [ERROR] JSON parsing failed for Post {post_id}: {je}")
+                                print(f"  Content preview (first 200 chars): {content[:200]}...")
+                                # Try to extract partial JSON if response was truncated
+                                if '{' in content:
+                                    # Find first { and try to find matching }
+                                    start = content.find('{')
+                                    # Try different strategies to find valid JSON
+                                    for end in range(len(content) - 1, start, -1):
+                                        if content[end] == '}':
+                                            try:
+                                                partial_json = json.loads(content[start:end + 1])
+                                                print(f"  [RECOVER] Partial JSON recovered for Post {post_id}")
+                                                res = partial_json
+                                                # Continue with processing if we have needs_update
+                                                if res.get('needs_update'):
+                                                    # Same update logic as above
+                                                    update_data = {
+                                                        "title": res.get('corrected_title', title),
+                                                        "content": self._cleanup_ai_leftovers(res.get('corrected_content_html', "")),
+                                                        "meta": {
+                                                            '_yoast_wpseo_focuskw': res.get('seo_keyphrase', ''),
+                                                            '_yoast_wpseo_metadesc': res.get('seo_meta_description', '')
+                                                        }
+                                                    }
+                                                    if not dry_run:
+                                                        success = self.publisher.update_post(post_id, update_data)
+                                                        if success:
+                                                            print(f"  [OK] Post {post_id} optimized (from recovered JSON)")
+                                                            fixed_count += 1
+                                                    break
+                                            except:
+                                                continue
+                                # If we couldn't recover, skip this post
+                                print(f"  [SKIP] Could not recover JSON for Post {post_id}, skipping")
                             except Exception as e:
                                 print(f"  [ERROR] Audit processing failed for Post {post_id}: {e}")
 

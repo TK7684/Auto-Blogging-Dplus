@@ -10,11 +10,12 @@ class ImageGenerator:
         load_dotenv()
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-        self.model_name = "imagegeneration@005"
-        
+        # Updated to Imagen 3 model (imagegeneration@005 is deprecated as of 2025)
+        self.model_name = "imagen-3.0-generate-001"
+
         if not self.project_id:
             raise ValueError("GOOGLE_CLOUD_PROJECT not found in .env")
-            
+
         vertexai.init(project=self.project_id, location=self.location)
         self.model = ImageGenerationModel.from_pretrained(self.model_name)
         print(f"ImageGenerator initialized with {self.model_name}")

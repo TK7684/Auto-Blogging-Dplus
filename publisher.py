@@ -68,14 +68,20 @@ class WordPressPublisher:
             }
 
         try:
+            print(f"Creating post with data: {json.dumps({k: v for k, v in data.items() if k != 'content'}, indent=2)}")
+            print(f"Content length: {len(content)} characters")
             response = requests.post(post_url, auth=self.auth, json=data)
             
             if response.status_code == 201:
                 post_data = response.json()
                 print(f"Post created successfully: {post_data['link']}")
+                print(f"Post ID: {post_data['id']}")
+                print(f"Post status: {post_data.get('status', 'unknown')}")
+                print(f"Post date: {post_data.get('date', 'unknown')}")
                 return post_data['id']
             else:
-                print(f"Failed to create post: {response.text}")
+                print(f"Failed to create post: {response.status_code}")
+                print(f"Response: {response.text}")
                 return None
         except Exception as e:
             print(f"Error creating post: {e}")
@@ -97,11 +103,13 @@ class WordPressPublisher:
     def update_post(self, post_id, data):
         url = f"{self.api_url}/posts/{post_id}"
         try:
+            # WordPress REST API expects POST for updates with ID in URL
             response = requests.post(url, json=data, auth=self.auth)
             if response.status_code == 200:
                 return True
             else:
                 print(f"Error updating post {post_id}: {response.status_code}")
+                print(f"Response: {response.text[:200]}...")
                 return False
         except Exception as e:
             print(f"Update Exception: {e}")

@@ -120,7 +120,7 @@ class ContentGenerator:
            - Use descriptive, educational subheadings
 
         7. **CONTENT LENGTH (MANDATORY)**
-           - Minimum 1200 words (comprehensive coverage)
+           - Minimum 800 words (comprehensive but fits within output limits)
            - Detailed explanations for each point
 
         8. **IMAGES WITH ALT TEXT (MANDATORY)**
@@ -214,13 +214,13 @@ class ContentGenerator:
            - Add 2-3 internal links to dplusskin.co.th
 
         8. **CONTENT LENGTH (MANDATORY)**
-           - Minimum 1200 words
+           - Minimum 800 words
 
         Task:
         1. Rewrite this content to be BETTER, MORE SCIENTIFIC, and MORE AUTHENTIC.
         2. Tone: Investigative and authoritative (Friend to Friend).
         3. **STRICT THAI LANGUAGE**.
-        4. **Length: 1200+ words**.
+        4. **Length: 800+ words**.
         5. **Structure**: Quick Review -> Intro -> Body -> Conclusion.
         6. **NO HARD SELL / NO CTA**. Focus purely on education.
         7. Include images with alt text, internal links, outbound links.
@@ -235,32 +235,47 @@ class ContentGenerator:
         """Call Vertex AI with the prompt."""
         try:
             print("Generator: Calling Vertex AI...")
-            # Use maximum token limit for comprehensive articles (8192 max)
+            # Use maximum token limit for comprehensive articles
             generation_config = GenerationConfig(
                 max_output_tokens=8192,
-                temperature=0.7
+                temperature=0.7,
+                top_p=0.95,
+                top_k=40
             )
             response = call_vertex_with_retry(self.model, prompt, generation_config=generation_config)
             if not response:
                 print("Generator: API returned no response.")
                 return None
             print("Generator: API Call successful.")
-            content = response.text.replace("```json", "").replace("```", "").strip()
+            content = response.text
+
+            # Clean up common formatting issues
+            # Remove markdown code blocks if present
+            content = content.replace("```json", "").replace("```", "")
+            # Remove any leading/trailing whitespace
+            content = content.strip()
+
             try:
                 return json.loads(content)
             except json.JSONDecodeError as je:
-                print(f"Generator Error: Failed to parse JSON. Content: {content[:500]}...")
-                # Try to extract partial JSON if response was truncated
-                if '{' in content and '}' in content:
-                    # Find first { and last }
+                print(f"Generator Error: Failed to parse JSON: {je}")
+                print(f"Content preview (first 500 chars): {content[:500]}...")
+
+                # Try to extract and fix partial JSON if response was truncated
+                if '{' in content:
+                    # Find first { and try to find matching }
                     start = content.find('{')
-                    end = content.rfind('}') + 1
-                    try:
-                        partial_json = json.loads(content[start:end])
-                        print("Generator: Recovered partial JSON (may be incomplete).")
-                        return partial_json
-                    except:
-                        pass
+                    # Try different strategies to find valid JSON
+                    for end in range(len(content) - 1, start, -1):
+                        if content[end] == '}':
+                            try:
+                                partial_json = json.loads(content[start:end + 1])
+                                print(f"Generator: Recovered partial JSON (length: {end - start + 1} chars).")
+                                return partial_json
+                            except:
+                                continue
+
+                print("Generator Error: Could not recover partial JSON.")
                 return None
         except Exception as e:
             print(f"Generator Error: {e}")

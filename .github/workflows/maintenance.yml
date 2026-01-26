@@ -52,7 +52,7 @@ jobs:
       env:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: us-central1
-        VERTEX_MODEL_NAME: gemini-1.5-flash
+        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
         WP_URL: ${{ secrets.WP_URL }}
         WP_USER: ${{ secrets.WP_USER }}
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
@@ -76,7 +76,7 @@ jobs:
       env:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: us-central1
-        VERTEX_MODEL_NAME: gemini-1.5-flash
+        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
         WP_URL: ${{ secrets.WP_URL }}
         WP_USER: ${{ secrets.WP_USER }}
         WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
@@ -101,6 +101,7 @@ jobs:
         git config --global user.email 'action@github.com'
         touch vertex_usage.json
         git add vertex_usage.json
+        git pull --rebase origin master
         git diff --quiet && git diff --staged --quiet || (git commit -m "Update usage tracking [skip ci]" && git push)
 
     - name: Create Maintenance Report

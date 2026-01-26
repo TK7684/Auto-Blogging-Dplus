@@ -41,13 +41,16 @@ class VertexRateLimiter:
     Implements token bucket algorithm and usage tracking.
     """
 
-    def __init__(self, requests_per_minute=15, requests_per_day=1500):
+    def __init__(self, requests_per_minute=5, requests_per_day=1500):
         """
-        Initialize rate limiter with conservative defaults.
+        Initialize rate limiter with more conservative defaults.
+
+        Note: Vertex AI has a limit of ~60 requests/minute for gemini-experimental base model.
+        We use 5 requests/minute to stay well under the limit and allow for bursts.
 
         Args:
-            requests_per_minute: Maximum requests per minute (default: 15)
-            requests_per_day: Maximum requests per day (default: 2500)
+            requests_per_minute: Maximum requests per minute (default: 5, conservative)
+            requests_per_day: Maximum requests per day (default: 1500, reduced from 2500)
         """
         self.requests_per_minute = requests_per_minute
         self.requests_per_day = requests_per_day
@@ -172,10 +175,10 @@ def get_rate_limiter():
     """Get or create the global rate limiter instance."""
     global _rate_limiter
     if _rate_limiter is None:
-        # Conservative limits for Vertex AI
+        # Conservative limits to avoid 429 errors for gemini-experimental base model
         _rate_limiter = VertexRateLimiter(
-            requests_per_minute=10,
-            requests_per_day=2500
+            requests_per_minute=5,
+            requests_per_day=1500
         )
     return _rate_limiter
 
@@ -186,7 +189,10 @@ def call_vertex_with_retry(model: GenerativeModel, prompt: str, max_retries: int
     Calls Vertex AI API with rate limiting, exponential backoff, and regional fallbacks.
     """
     rate_limiter = get_rate_limiter()
+    # Extract base model name from full resource path (e.g., "publishers/google/models/gemini-2.0-flash-exp" -> "gemini-2.0-flash-exp")
     initial_model_name = model._model_name
+    if "/" in initial_model_name:
+        initial_model_name = initial_model_name.split("/")[-1]
     
     # Check Cache first
     if not str(prompt).strip():
@@ -198,18 +204,27 @@ def call_vertex_with_retry(model: GenerativeModel, prompt: str, max_retries: int
             def __init__(self, text): self.text = text
         return MockResponse(cached_response["response"])
 
-    # Daily usage check
+    # Daily usage check with buffer
     daily_usage = rate_limiter.get_daily_usage()
-    if daily_usage >= rate_limiter.requests_per_day:
+    if daily_usage >= (rate_limiter.requests_per_day * 0.95):  # Stop at 95% to leave buffer
         print("XXX CIRCUIT BREAKER TRIPPED: Daily Quota Limit Reached. XXX")
         return None
 
-    # Fallback lists
+    # Fallback lists - Updated with currently available models (as of 2025)
+    # Note: Model IDs must match exactly what's available in your Vertex AI project/region
     models_to_try = [initial_model_name]
-    if "flash" in initial_model_name:
-        models_to_try.extend(["gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"])
+    if "flash" in initial_model_name or "2.0" in initial_model_name:
+        # Updated list with models known to work in Vertex AI
+        models_to_try.extend([
+            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash-thinking-exp",
+            "gemini-1.5-flash-002",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-pro-002",
+            "gemini-1.5-pro-001"
+        ])
     elif "pro" in initial_model_name:
-        models_to_try.extend(["gemini-1.5-pro-001", "gemini-1.5-pro-002"])
+        models_to_try.extend(["gemini-1.5-pro-002", "gemini-1.5-pro-001", "gemini-2.0-flash-exp"])
     
     # Remove duplicates but keep order
     models_to_try = list(dict.fromkeys(models_to_try))
@@ -285,7 +300,7 @@ def call_vertex_with_retry(model: GenerativeModel, prompt: str, max_retries: int
     return None
 
 
-def create_vertex_model(model_name: str = "gemini-1.5-flash",
+def create_vertex_model(model_name: str = "gemini-2.0-flash-exp",
                        project: Optional[str] = None,
                        location: str = "us-central1",
                        use_search_tool: bool = False) -> GenerativeModel:
@@ -305,7 +320,7 @@ def create_vertex_model(model_name: str = "gemini-1.5-flash",
     return GenerativeModel(model_name, tools=tools)
 
 
-def get_model_name_from_env(fallback: str = "gemini-1.5-flash") -> str:
+def get_model_name_from_env(fallback: str = "gemini-2.0-flash-exp") -> str:
     """Gets the model name from environment variable with fallback."""
     load_dotenv()
     return os.getenv("VERTEX_MODEL_NAME", fallback)

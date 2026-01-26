@@ -85,17 +85,15 @@ def main():
     
     # Model Strategy for Vertex AI
     primary_model_flash = os.getenv("VERTEX_MODEL_NAME", "gemini-2.0-flash-exp")
-    secondary_model = "gemini-1.5-flash-002"
+    secondary_model = "gemini-2.0-flash-exp"
     
     def execute_with_fallback(agent, method_name, *method_args, **method_kwargs):
         """Executes an agent method with model fallback."""
         # Determine initial model based on mode
         initial_model = primary_model_flash
-        if args.mode == "weekly" and "researcher" in str(agent.__class__).lower():
-            # Weekly mode might prefer a different model for research
-            initial_model = "gemini-1.5-flash-002"
+        # All modes now use the same primary model for consistency
 
-        fallback_model = secondary_model if initial_model != secondary_model else "gemini-2.0-flash-exp"
+        fallback_model = secondary_model if initial_model != secondary_model else "gemini-1.5-flash-002"
         
         # The logic is now handled robustly inside call_vertex_with_retry in vertex_utils.py
         # which will try multiple regions and model versions if 404/transient errors occur.
@@ -114,9 +112,9 @@ def main():
         
         # 2. Fetch competitor RSS
         rss_urls = [
-            "https://feeds.feedburner.com/ThaiSkincareNews", 
-            "https://www.cosmeticsdesign-asia.com/rss/feed/645163",
-            "https://www.vogue.co.th/beauty/rss"
+            "https://www.pantip.com/forum/topic", # More reliable Thai source
+            "https://www.kapook.com/feed/beauty.xml", # Thai beauty content
+            "https://www.sanook.com/horoscope/feed" # Alternative if beauty feed fails
         ]
         competitor_articles = researcher.fetch_competitor_rss(rss_urls)
         
@@ -326,6 +324,9 @@ def main():
             offset_minutes = random.randint(10, 120)
             scheduled_date = (datetime.now() + timedelta(minutes=offset_minutes)).isoformat()
             print(f"📅 Scheduling post for: {scheduled_date} (Offset: {offset_minutes} mins)")
+            # Also log the scheduling info for debugging
+            print(f"📅 Current time: {datetime.now().isoformat()}")
+            print(f"📅 Post will be published at: {scheduled_date}")
 
         post_id = publisher.create_post(
             title=article.get('title'),
