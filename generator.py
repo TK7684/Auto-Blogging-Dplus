@@ -35,7 +35,7 @@ class ContentGenerator:
         self.model = create_vertex_model(model_name)
         print(f"Generator: Model updated to {model_name}")
 
-    def generate_article(self, product_name, product_description, research_data=None, hot_topic_keywords=None):
+    def generate_article(self, product_name, product_description, research_data=None, hot_topic_keywords=None, related_articles=None):
         """
         Generates a blog post using the advanced SEO journalist strategy.
 
@@ -44,6 +44,7 @@ class ContentGenerator:
             product_description: Description of the product
             research_data: Research data from researcher agent
             hot_topic_keywords: Keywords from hot topic to focus on (optional)
+            related_articles: List of dicts with 'title' and 'url' (optional)
         """
         brand_context = f"""
         Brand Identity: {self.brand_guidelines.get('brand_name')}
@@ -77,6 +78,20 @@ class ContentGenerator:
                 Key Takeaways: {key_takeaways}
                 """
 
+        # Build related articles context
+        related_context = ""
+        if related_articles:
+            links_html = "\n".join([f'<li><a href="{a["url"]}">{a["title"]}</a></li>' for a in related_articles])
+            related_context = f"""
+            =====================================================================
+            INTERNAL LINKS: RELATED ARTICLES (MANDATORY)
+            =====================================================================
+            Add a section at the end (before FAQ) titled "บทความที่เกี่ยวข้อง" with these links:
+            <ul>
+            {links_html}
+            </ul>
+            """
+
         prompt = f"""
         You are an expert SEO content writer and senior investigative journalist specializing in skincare education.
         Write a comprehensive EDUCATIONAL article about: {product_name}.
@@ -84,6 +99,7 @@ class ContentGenerator:
         Brand Context: {brand_context}
         Product Info: {product_description}
         {research_context}
+        {related_context}
 
         =====================================================================
         CRITICAL SEO REQUIREMENTS - MUST FOLLOW EXACTLY:
@@ -147,10 +163,12 @@ class ContentGenerator:
         CONTENT GUIDELINES:
         =====================================================================
 
-        - **STRICT SOFT SELL**: Focus on education, NOT sales
-        - **NO CTA**: Don't ask them to buy anything
-        - **Thai Language**: Professional but friendly
-        - **Structure**: Quick Review → Introduction → Body → Conclusion → FAQ
+        - **STRICT SOFT SELL**: Focus on education, NOT sales. Mention the product {product_name} naturally as a solution or example within the educational context.
+        - **NO CTA / NO HARD SELL**: Do NOT use phrases like "Buy now", "Order today", "Discount", or "Don't miss out". Strictly NO sales-oriented language.
+        - **Thai Language**: Professional but friendly.
+        - **HASHTAGS**: End the post with 3-5 relevant Thai hashtags (e.g., #สกินแคร์ #ผิวใส).
+        - **Structure**: Quick Review → Introduction → Body → Conclusion → บทความที่เกี่ยวข้อง (Related Articles) → FAQ
+        - **Word Count**: Aim for 1000+ words for maximum depth.
 
         Output Format: Raw JSON matching this structure:
         {{
@@ -168,7 +186,7 @@ class ContentGenerator:
         """
         return self._call_gemini(prompt)
 
-    def rewrite_competitor_content(self, competitor_data, product_name, product_description=""):
+    def rewrite_competitor_content(self, competitor_data, product_name, product_description="", related_articles=None):
         """
         Rewrites competitor content with added scientific depth and investigative journalist tone,
         linking it to a specific brand product.
@@ -184,6 +202,8 @@ class ContentGenerator:
 
         Brand Identity: {self.brand_guidelines.get('brand_name')}
         Brand tone: {self.brand_guidelines.get('tone_of_voice')}
+
+        {f"Related Articles: {json.dumps(related_articles, ensure_ascii=False)}" if related_articles else ""}
 
         =====================================================================
         CRITICAL SEO REQUIREMENTS - MUST FOLLOW EXACTLY:
@@ -221,10 +241,11 @@ class ContentGenerator:
         2. Tone: Investigative and authoritative (Friend to Friend).
         3. **STRICT THAI LANGUAGE**.
         4. **Length: 800+ words**.
-        5. **Structure**: Quick Review -> Intro -> Body -> Conclusion.
-        6. **NO HARD SELL / NO CTA**. Focus purely on education.
-        7. Include images with alt text, internal links, outbound links.
-        8. Include FAQ section with Schema.org markup.
+        5. **Structure**: Quick Review -> Intro -> Body -> Conclusion -> บทความที่เกี่ยวข้อง -> FAQ.
+        6. **NO HARD SELL / NO CTA**. Focus purely on education. Mention {product_name} as an expert recommendation.
+        7. **HASHTAGS**: End with 3-5 relevant Thai hashtags.
+        8. Include images with alt text, internal links, outbound links.
+        9. Include FAQ section with Schema.org markup.
 
         Output Format: Raw JSON (same keys as generate_article).
         Do not use markdown formatting.

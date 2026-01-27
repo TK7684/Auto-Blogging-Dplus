@@ -105,10 +105,16 @@ def main():
             return None
 
     if args.mode == "weekly":
-        print("Step 2: Performing Content Gap Research (Weekly)...")
-        # 1. Fetch own topics from WP
+        # 1. Fetch own topics from WP for gap analysis and internal linking
         own_posts = publisher.get_posts(per_page=50)
         own_titles = [p['title']['rendered'] for p in own_posts] if own_posts else []
+        
+        # Prepare related articles for internal linking
+        related_articles = []
+        if own_posts:
+            # Pick 3-5 random recent posts for linking
+            sampled_posts = random.sample(own_posts, min(5, len(own_posts)))
+            related_articles = [{"title": p['title']['rendered'], "url": p['link']} for p in sampled_posts]
         
         # 2. Fetch competitor RSS
         rss_urls = [
@@ -143,7 +149,7 @@ def main():
             product_content = target_product_data['content'] if target_product_data else ""
             
             print(f"Linking Weekly Deep Research to Product: {product_name}")
-            article = execute_with_fallback(generator, "rewrite_competitor_content", best_gap, product_name, product_description=product_content)
+            article = execute_with_fallback(generator, "rewrite_competitor_content", best_gap, product_name, product_description=product_content, related_articles=related_articles)
         else:
             print("Gap analysis failed. Falling back to hot topic.")
             args.mode = "daily"
@@ -155,6 +161,14 @@ def main():
         # This allows us to link the specific product to a GENERAL trend
         print("Step 2: Researching Hot Topics in Thailand...")
         hot_topic_data = execute_with_fallback(researcher, "research_hot_topics")
+        
+        # Prepare related articles for internal linking
+        print("Fetching related articles for internal links...")
+        own_posts = publisher.get_posts(per_page=10)
+        related_articles = []
+        if own_posts:
+            sampled_posts = random.sample(own_posts, min(3, len(own_posts)))
+            related_articles = [{"title": p['title']['rendered'], "url": p['link']} for p in sampled_posts]
         
         # --- PRODUCT SELECTION LOGIC (CSV Priority) ---
         products_from_csv = loader.load_products_from_csv("product_data.csv")
@@ -251,7 +265,7 @@ def main():
         if hot_topic_data and hot_topic_data.get('hot_topics'):
             hot_topic_keywords = hot_topic_data['hot_topics'][0].get('keywords', [])
 
-        article = execute_with_fallback(generator, "generate_article", product_name, product_content, research_data=research_results, hot_topic_keywords=hot_topic_keywords)
+        article = execute_with_fallback(generator, "generate_article", product_name, product_content, research_data=research_results, hot_topic_keywords=hot_topic_keywords, related_articles=related_articles)
 
     if not article:
         print("Content generation failed.")
@@ -268,7 +282,8 @@ def main():
             "generate_article",
             product_name, 
             product_content + f"\n\nRefinement: {review_results.get('editor_feedback')}", 
-            research_data=research_results if 'research_results' in locals() else None
+            research_data=research_results if 'research_results' in locals() else None,
+            related_articles=related_articles if 'related_articles' in locals() else None
         )
     else:
         print("Reviewer: Article Approved!")

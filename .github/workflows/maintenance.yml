@@ -2,8 +2,8 @@ name: Post Optimization & Maintenance
 
 on:
   schedule:
-    # Runs every Sunday at 03:00 UTC (10:00 AM Thailand Time)
-    - cron: '0 3 * * 0'
+    # Runs every day at 08:00 UTC (3 PM Thailand Time, UTC+7)
+    - cron: '0 8 * * *'
   workflow_dispatch: # Allows manual trigger with inputs
     inputs:
       mode:
@@ -47,8 +47,31 @@ jobs:
     - name: Set up gcloud
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Run Maintenance - Fix Issues
-      if: github.event.inputs.mode != 'seo' || github.event.inputs.mode == ''
+    - name: Run Maintenance - Fix Missing Images (Daily 3 PM)
+      if: github.event_name == 'schedule'
+      env:
+        GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+        GOOGLE_CLOUD_LOCATION: us-central1
+        VERTEX_MODEL_NAME: gemini-2.0-flash-exp
+        WP_URL: ${{ secrets.WP_URL }}
+        WP_USER: ${{ secrets.WP_USER }}
+        WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      run: |
+        echo "Running daily image fix maintenance..."
+        python -c "
+        from maintenance_agent import MaintenanceAgent
+        import sys
+        try:
+            maint = MaintenanceAgent()
+            maint.fix_missing_images(dry_run=False, limit=5)
+            sys.exit(0)
+        except Exception as e:
+            print(f'Error: {e}')
+            sys.exit(1)
+        "
+
+    - name: Run Maintenance - Fix Issues (Manual Only)
+      if: github.event.inputs.mode != 'seo' && github.event.inputs.mode != '' && github.event_name == 'workflow_dispatch'
       env:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         GOOGLE_CLOUD_LOCATION: us-central1

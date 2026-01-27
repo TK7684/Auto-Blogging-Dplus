@@ -470,6 +470,73 @@ class MaintenanceAgent:
         """
         return self.audit_and_fix_posts(dry_run=dry_run, limit=limit, mode='seo')
 
+    def fix_missing_images(self, dry_run=False, limit=10):
+        """
+        Dedicated maintenance function to fix posts with missing featured images.
+        This is a faster, focused alternative to the full audit cycle.
+        Runs daily at 3 PM Thailand Time via GitHub Actions.
+        """
+        print(f"Maintenance: Fixing missing images (limit={limit}, dry_run={dry_run})...")
+        
+        page = 1
+        fixed_count = 0
+        processed_count = 0
+        
+        while True:
+            posts = self.publisher.get_posts(per_page=20, page=page)
+            
+            if not posts:
+                print("No more posts to process.")
+                break
+            
+            for post in posts:
+                if limit and fixed_count >= limit:
+                    print(f"Limit of {limit} images fixed. Stopping.")
+                    break
+                
+                post_id = post.get('id')
+                title = post.get('title', {}).get('rendered', '')
+                featured_media = post.get('featured_media', 0)
+                
+                if featured_media != 0:
+                    continue  # Already has an image
+                
+                processed_count += 1
+                print(f"  [FIX] Post {post_id} ('{title[:40]}...') is missing an image.")
+                
+                if dry_run:
+                    print(f"  [DRY RUN] Would generate image for Post {post_id}")
+                    fixed_count += 1
+                    continue
+                
+                try:
+                    img_prompt = f"Professional skincare product photography for {title}, high end, clean background, 4k"
+                    img_path = self.image_gen.generate_image(img_prompt)
+                    if img_path:
+                        media_id = self.publisher.upload_media(img_path, title=title)
+                        if media_id:
+                            self.publisher.update_post(post_id, {"featured_media": media_id})
+                            print(f"  [OK] Featured image set for Post {post_id}")
+                            fixed_count += 1
+                            # Cleanup local image
+                            try:
+                                os.remove(img_path)
+                            except:
+                                pass
+                except Exception as e:
+                    print(f"  [ERROR] Image generation failed for Post {post_id}: {e}")
+            
+            if limit and fixed_count >= limit:
+                break
+            page += 1
+        
+        print(f"\n{'='*50}")
+        print(f"Image Fix Summary")
+        print(f"{'='*50}")
+        print(f"Posts Checked: {processed_count}")
+        print(f"Images Fixed: {fixed_count}")
+        return {'processed': processed_count, 'fixed': fixed_count}
+
 
 if __name__ == "__main__":
     # Test requires real WP connection
