@@ -49,9 +49,12 @@ jobs:
       # Saves the updated post_history.json back to the repo
       # so we don't repeat products.
       run: |
-        git config --global user.name 'GitHub Action'
-        git config --global user.email 'action@github.com'
-        touch post_history.json vertex_usage.json
+        git config --local user.name 'GitHub Action'
+        git config --local user.email 'action@github.com'
         git add post_history.json vertex_usage.json
-        git pull --rebase origin master
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update post history [skip ci]" && git push)
+        if git diff --staged --quiet; then
+          echo "No changes to commit."
+        else
+          git commit -m "Update post history [skip ci]"
+          git push origin master
+        fi
